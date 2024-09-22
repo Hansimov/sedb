@@ -1,0 +1,20 @@
+[project]
+name = "bldb"
+version = "0.1.0"
+authors = [
+    { name="Hansimov" },
+]
+description = "BiLi search engine DataBase utils"
+readme = "README.md"
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [ "tclogger", "pymongo" ]
+
+[project.urls]
+Homepage = "https://github.com/Hansimov/tclogger"
+Issues = "https://github.com/Hansimov/tclogger/issues"
+Changelog = "https://github.com/Hansimov/tclogger/blob/main/CHANGELOG.md"
