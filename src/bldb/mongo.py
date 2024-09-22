@@ -2,7 +2,8 @@ import pymongo
 import threading
 
 from pathlib import Path
-from tclogger import logger, logstr, get_now_str, ts_to_str, dict_to_str, FileLogger
+from tclogger import logger, logstr, FileLogger
+from tclogger import get_now_str, ts_to_str, dict_to_str
 from typing import Literal, Union, TypedDict
 
 
@@ -39,7 +40,7 @@ class MongoOperator:
         self.host = self.configs["host"]
         self.port = self.configs["port"]
         self.dbname = self.configs["dbname"]
-        self.endpoint = f"mongodb://{self.host}:{self.port}/"
+        self.endpoint = f"mongodb://{self.host}:{self.port}"
 
     def connect(self, connect_msg: str = None):
         connect_msg = connect_msg or self.connect_msg
