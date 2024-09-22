@@ -1,11 +1,11 @@
-# bldb
-BiLi search engine DataBase utils
+# sedb
+Search Engine DataBase utils
 
-![](https://img.shields.io/pypi/v/bldb?label=bldb&color=blue&cacheSeconds=60)
+![](https://img.shields.io/pypi/v/sedb?label=sedb&color=blue&cacheSeconds=60)
 
 ## Install
 ```sh
-pip install bldb --upgrade
+pip install sedb --upgrade
 ```
 
 ## Usage
