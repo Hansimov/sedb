@@ -14,6 +14,6 @@ if __name__ == "__main__":
         "port": 27017,
         "dbname": "test",
     }
-    mongo = MongoOperator(configs=mongo_configs)
+    mongo = MongoOperator(configs=mongo_configs, indent=2)
 
     # python example.py

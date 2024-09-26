@@ -2,9 +2,11 @@ import pymongo
 import threading
 
 from pathlib import Path
-from tclogger import logger, logstr, FileLogger
+from tclogger import TCLogger, logstr, FileLogger
 from tclogger import get_now_str, ts_to_str, dict_to_str
 from typing import Literal, Union, TypedDict
+
+logger = TCLogger()
 
 
 class MongoConfigsType(TypedDict):
@@ -22,9 +24,12 @@ class MongoOperator:
         lock: threading.Lock = None,
         log_path: Union[str, Path] = None,
         verbose: bool = True,
+        indent: int = 0,
     ):
         self.configs = configs
         self.verbose = verbose
+        self.indent = indent
+        logger.indent(self.indent)
         self.init_configs()
         self.connect_at_init = connect_at_init
         self.connect_msg = connect_msg
@@ -94,7 +99,7 @@ class MongoOperator:
                 args_dict["filter_range_str"] = filter_range_str
             if self.verbose:
                 logger.note(f"> Getting cursor with args:")
-                logger.mesg(dict_to_str(args_dict), indent=2)
+                logger.mesg(dict_to_str(args_dict), indent=logger.log_indent + 2)
 
         filter = {}
         if filter_index:
