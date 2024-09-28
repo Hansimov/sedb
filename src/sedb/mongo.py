@@ -3,7 +3,7 @@ import threading
 
 from pathlib import Path
 from tclogger import TCLogger, logstr, FileLogger
-from tclogger import get_now_str, ts_to_str, dict_to_str
+from tclogger import get_now_str, ts_to_str, str_to_ts, dict_to_str
 from typing import Literal, Union, TypedDict
 
 logger = TCLogger()
@@ -70,6 +70,64 @@ class MongoOperator:
             error_str = dict_to_str(error_info, is_colored=False)
             self.file_logger.log(error_str, "error")
 
+    def format_filter(
+        self,
+        filter_index: str = None,
+        filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
+        filter_range: Union[int, str, tuple, list] = None,
+    ) -> dict:
+        filter_dict = {}
+        if filter_index:
+            if filter_op == "range":
+                if filter_range and isinstance(filter_range, (tuple, list)):
+                    if filter_index.lower() in ["pubdate", "insert_at"]:
+                        filter_range = [
+                            str_to_ts(i) if isinstance(i, str) else i
+                            for i in filter_range
+                        ]
+                    filter_dict[filter_index] = {
+                        "$gte": min(filter_range),
+                        "$lte": max(filter_range),
+                    }
+                else:
+                    raise ValueError(f"× Invalid filter_range: {filter_range}")
+            elif filter_op in ["gt", "lt", "gte", "lte"]:
+                if filter_range and isinstance(filter_range, (int, float, str)):
+                    if filter_index.lower() in ["pubdate", "insert_at"]:
+                        if isinstance(filter_range, str):
+                            filter_range = str_to_ts(filter_range)
+                    filter_dict[filter_index] = {f"${filter_op}": filter_range}
+                else:
+                    raise ValueError(f"× Invalid filter_range: {filter_range}")
+            else:
+                raise ValueError(f"× Invalid filter_op: {filter_op}")
+        return filter_dict
+
+    def log_args(self, args_dict: dict):
+        filter_index = args_dict["filter_index"]
+        filter_range = args_dict["filter_range"]
+        if filter_index and filter_index.lower() in ["pubdate", "insert_at"]:
+            if isinstance(filter_range, (tuple, list)):
+                filter_range_ts = [
+                    str_to_ts(i) if isinstance(i, str) else i for i in filter_range
+                ]
+                filter_range_str = [
+                    ts_to_str(i) if isinstance(i, int) else i for i in filter_range
+                ]
+            elif isinstance(filter_range, int):
+                filter_range_ts = filter_range
+                filter_range_str = ts_to_str(filter_range)
+            elif isinstance(filter_range, str):
+                filter_range_ts = str_to_ts(filter_range)
+                filter_range_str = filter_range
+            else:
+                filter_range_ts = filter_range
+                filter_range_str = filter_range
+            args_dict["filter_range_ts"] = filter_range_ts
+            args_dict["filter_range_str"] = filter_range_str
+        logger.note(f"> Getting cursor with args:")
+        logger.mesg(dict_to_str(args_dict), indent=logger.log_indent + 2)
+
     def get_cursor(
         self,
         collection: str,
@@ -78,9 +136,8 @@ class MongoOperator:
         filter_range: Union[int, str, tuple, list] = None,
         sort_index: str = None,
         sort_order: Literal["asc", "desc"] = "asc",
-        verbose: bool = False,
     ):
-        if verbose:
+        if self.verbose:
             args_dict = {
                 "collection": collection,
                 "filter_index": filter_index,
@@ -89,32 +146,11 @@ class MongoOperator:
                 "sort_index": sort_index,
                 "sort_order": sort_order,
             }
-            if filter_index and filter_index.lower() in ["pubdate", "insert_at"]:
-                if isinstance(filter_range, (tuple, list)):
-                    filter_range_str = [ts_to_str(i) for i in filter_range]
-                elif isinstance(filter_range, int):
-                    filter_range_str = ts_to_str(filter_range)
-                else:
-                    filter_range_str = filter_range
-                args_dict["filter_range_str"] = filter_range_str
-            if self.verbose:
-                logger.note(f"> Getting cursor with args:")
-                logger.mesg(dict_to_str(args_dict), indent=logger.log_indent + 2)
+            self.log_args(args_dict)
 
-        filter = {}
-        if filter_index:
-            if filter_op == "range":
-                if filter_range and isinstance(filter_range, (tuple, list)):
-                    filter[filter_index] = {
-                        "$gte": min(filter_range),
-                        "$lte": max(filter_range),
-                    }
-                else:
-                    raise ValueError(f"× Invalid filter_range: {filter_range}")
-            elif filter_op in ["gt", "lt", "gte", "lte"]:
-                filter[filter_index] = {f"${filter_op}": filter_range}
-            else:
-                raise ValueError(f"× Invalid filter_op: {filter_op}")
+        filter = self.format_filter(
+            filter_index=filter_index, filter_op=filter_op, filter_range=filter_range
+        )
 
         cursor = self.db[collection].find(filter)
 
