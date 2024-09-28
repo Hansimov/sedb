@@ -14,6 +14,26 @@ if __name__ == "__main__":
         "port": 27017,
         "dbname": "test",
     }
-    mongo = MongoOperator(configs=mongo_configs, indent=2)
+
+    collection = "videos"
+    mongo = MongoOperator(configs=mongo_configs, indent=0)
+    cursor1 = mongo.get_cursor(
+        collection,
+        filter_index="pubdate",
+        filter_op="lte",
+        filter_range="2012-01-01",
+        sort_index="pubdate",
+        sort_order="asc",
+    )
+    print(cursor1.next())
+    cursor2 = mongo.get_cursor(
+        collection,
+        filter_index="pubdate",
+        filter_op="range",
+        filter_range=["2012-01-01", "2012-12-31"],
+        sort_index="pubdate",
+        sort_order="asc",
+    )
+    print(cursor2.next())
 
     # python example.py
