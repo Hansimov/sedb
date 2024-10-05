@@ -75,25 +75,38 @@ class MongoOperator:
         filter_index: str = None,
         filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
         filter_range: Union[int, str, tuple, list] = None,
+        date_fields: list[str] = ["pubdate", "insert_at", "index_at"],
     ) -> dict:
         filter_dict = {}
         if filter_index:
             if filter_op == "range":
-                if filter_range and isinstance(filter_range, (tuple, list)):
-                    if filter_index.lower() in ["pubdate", "insert_at"]:
-                        filter_range = [
-                            str_to_ts(i) if isinstance(i, str) else i
-                            for i in filter_range
-                        ]
-                    filter_dict[filter_index] = {
-                        "$gte": min(filter_range),
-                        "$lte": max(filter_range),
-                    }
+                if (
+                    filter_range
+                    and isinstance(filter_range, (tuple, list))
+                    and len(filter_range) == 2
+                ):
+                    l_val, r_val = filter_range
+                    if filter_index.lower() in date_fields:
+                        if isinstance(l_val, str):
+                            l_val = str_to_ts(l_val)
+                        if isinstance(r_val, str):
+                            r_val = str_to_ts(r_val)
+                    if l_val is not None and r_val is not None:
+                        filter_dict[filter_index] = {
+                            "$lte": max([l_val, r_val]),
+                            "$gte": min([l_val, r_val]),
+                        }
+                    elif l_val is not None:
+                        filter_dict[filter_index] = {"$gte": l_val}
+                    elif r_val is not None:
+                        filter_dict[filter_index] = {"$lte": r_val}
+                    else:
+                        pass
                 else:
                     raise ValueError(f"× Invalid filter_range: {filter_range}")
             elif filter_op in ["gt", "lt", "gte", "lte"]:
                 if filter_range and isinstance(filter_range, (int, float, str)):
-                    if filter_index.lower() in ["pubdate", "insert_at"]:
+                    if filter_index.lower() in date_fields:
                         if isinstance(filter_range, str):
                             filter_range = str_to_ts(filter_range)
                     filter_dict[filter_index] = {f"${filter_op}": filter_range}
@@ -103,10 +116,14 @@ class MongoOperator:
                 raise ValueError(f"× Invalid filter_op: {filter_op}")
         return filter_dict
 
-    def log_args(self, args_dict: dict):
+    def log_args(
+        self,
+        args_dict: dict,
+        date_fields: list[str] = ["pubdate", "insert_at", "index_at"],
+    ):
         filter_index = args_dict["filter_index"]
         filter_range = args_dict["filter_range"]
-        if filter_index and filter_index.lower() in ["pubdate", "insert_at"]:
+        if filter_index and filter_index.lower() in date_fields:
             if isinstance(filter_range, (tuple, list)):
                 filter_range_ts = [
                     str_to_ts(i) if isinstance(i, str) else i for i in filter_range
@@ -137,6 +154,9 @@ class MongoOperator:
         sort_index: str = None,
         sort_order: Literal["asc", "desc"] = "asc",
     ):
+        filter_dict = self.format_filter(
+            filter_index=filter_index, filter_op=filter_op, filter_range=filter_range
+        )
         if self.verbose:
             args_dict = {
                 "collection": collection,
@@ -145,14 +165,11 @@ class MongoOperator:
                 "filter_range": filter_range,
                 "sort_index": sort_index,
                 "sort_order": sort_order,
+                "filter_dict": filter_dict,
             }
             self.log_args(args_dict)
 
-        filter = self.format_filter(
-            filter_index=filter_index, filter_op=filter_op, filter_range=filter_range
-        )
-
-        cursor = self.db[collection].find(filter)
+        cursor = self.db[collection].find(filter_dict)
 
         if sort_index:
             if sort_order and sort_order.lower().startswith("desc"):
