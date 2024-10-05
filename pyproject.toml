@@ -1,6 +1,6 @@
 [project]
 name = "sedb"
-version = "0.2.1"
+version = "0.2.1.1"
 authors = [
     { name="Hansimov" },
 ]
@@ -15,6 +15,5 @@ classifiers = [
 dependencies = [ "tclogger", "pymongo", "elasticsearch" ]
 
 [project.urls]
-Homepage = "https://github.com/Hansimov/tclogger"
-Issues = "https://github.com/Hansimov/tclogger/issues"
-Changelog = "https://github.com/Hansimov/tclogger/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Hansimov/sedb"
+Issues = "https://github.com/Hansimov/sedb/issues"
