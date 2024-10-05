@@ -51,9 +51,18 @@ if __name__ == "__main__":
         collection,
         filter_index="pubdate",
         filter_op="range",
-        filter_range=["2012-01-01", "2012-12-31"],
+        filter_range=["2012-12-31", "2012-01-01"],
         sort_index="pubdate",
         sort_order="asc",
     )
     print(cursor2.next())
+    cursor3 = mongo.get_cursor(
+        collection,
+        filter_index="pubdate",
+        filter_op="range",
+        filter_range=["2012-01-01", None],
+        sort_index="pubdate",
+        sort_order="asc",
+    )
+    print(cursor3.next())
 ```
