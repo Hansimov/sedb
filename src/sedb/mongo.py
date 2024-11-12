@@ -6,6 +6,8 @@ from tclogger import TCLogger, logstr, FileLogger
 from tclogger import get_now_str, ts_to_str, str_to_ts, dict_to_str
 from typing import Literal, Union, TypedDict
 
+from .filters import to_mongo_filter
+
 logger = TCLogger()
 
 
@@ -70,52 +72,6 @@ class MongoOperator:
             error_str = dict_to_str(error_info, is_colored=False)
             self.file_logger.log(error_str, "error")
 
-    def format_filter(
-        self,
-        filter_index: str = None,
-        filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
-        filter_range: Union[int, str, tuple, list] = None,
-        date_fields: list[str] = ["pubdate", "insert_at", "index_at"],
-    ) -> dict:
-        filter_dict = {}
-        if filter_index:
-            if filter_op == "range":
-                if (
-                    filter_range
-                    and isinstance(filter_range, (tuple, list))
-                    and len(filter_range) == 2
-                ):
-                    l_val, r_val = filter_range
-                    if filter_index.lower() in date_fields:
-                        if isinstance(l_val, str):
-                            l_val = str_to_ts(l_val)
-                        if isinstance(r_val, str):
-                            r_val = str_to_ts(r_val)
-                    if l_val is not None and r_val is not None:
-                        filter_dict[filter_index] = {
-                            "$lte": max([l_val, r_val]),
-                            "$gte": min([l_val, r_val]),
-                        }
-                    elif l_val is not None:
-                        filter_dict[filter_index] = {"$gte": l_val}
-                    elif r_val is not None:
-                        filter_dict[filter_index] = {"$lte": r_val}
-                    else:
-                        pass
-                else:
-                    raise ValueError(f"× Invalid filter_range: {filter_range}")
-            elif filter_op in ["gt", "lt", "gte", "lte"]:
-                if filter_range and isinstance(filter_range, (int, float, str)):
-                    if filter_index.lower() in date_fields:
-                        if isinstance(filter_range, str):
-                            filter_range = str_to_ts(filter_range)
-                    filter_dict[filter_index] = {f"${filter_op}": filter_range}
-                else:
-                    raise ValueError(f"× Invalid filter_range: {filter_range}")
-            else:
-                raise ValueError(f"× Invalid filter_op: {filter_op}")
-        return filter_dict
-
     def log_args(
         self,
         args_dict: dict,
@@ -153,9 +109,13 @@ class MongoOperator:
         filter_range: Union[int, str, tuple, list] = None,
         sort_index: str = None,
         sort_order: Literal["asc", "desc"] = "asc",
+        is_date_index: bool = None,
     ):
-        filter_dict = self.format_filter(
-            filter_index=filter_index, filter_op=filter_op, filter_range=filter_range
+        filter_dict = to_mongo_filter(
+            filter_index=filter_index,
+            filter_op=filter_op,
+            filter_range=filter_range,
+            is_date_index=is_date_index,
         )
         if self.verbose:
             args_dict = {
