@@ -101,6 +101,34 @@ class MongoOperator:
         logger.note(f"> Getting cursor with args:")
         logger.mesg(dict_to_str(args_dict), indent=logger.log_indent + 2)
 
+    def get_total_count(
+        self,
+        collection: str,
+        filter_index: Literal["insert_at", "pubdate"] = "insert_at",
+        filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
+        filter_range: Union[int, str, tuple, list] = None,
+        estimate_count: bool = False,
+    ) -> int:
+        logger.note(f"> Counting docs:", end=" ", verbose=self.verbose)
+        db_collect = self.db[collection]
+        filter_params = {
+            "filter_index": filter_index,
+            "filter_op": filter_op,
+            "filter_range": filter_range,
+        }
+
+        if filter_range is None or estimate_count:
+            total_count = db_collect.estimated_document_count()
+            logger.success(
+                f"[{total_count}] {logstr.file('(estimated)')}", verbose=self.verbose
+            )
+        else:
+            filter_dict = to_mongo_filter(**filter_params)
+            total_count = db_collect.count_documents(filter_dict)
+            logger.success(f"[{total_count}]", verbose=self.verbose)
+
+        return total_count
+
     def get_cursor(
         self,
         collection: str,
