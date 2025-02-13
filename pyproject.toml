@@ -1,6 +1,6 @@
 [project]
 name = "sedb"
-version = "0.3"
+version = "0.3.1"
 authors = [
     { name="Hansimov" },
 ]
@@ -12,7 +12,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = [ "tclogger", "pymongo", "elasticsearch", "pymilvus" ]
+dependencies = [ "tclogger", "pymongo", "elasticsearch", "pymilvus", "qdrant-client" ]
 
 [project.urls]
 Homepage = "https://github.com/Hansimov/sedb"
