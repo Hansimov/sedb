@@ -6,7 +6,7 @@ from tclogger import TCLogger, logstr, FileLogger
 from tclogger import get_now_str, ts_to_str, str_to_ts, dict_to_str
 from typing import Literal, Union, TypedDict
 
-from .filters import to_mongo_filter
+from .mongo_filter import to_mongo_filter
 
 logger = TCLogger()
 
