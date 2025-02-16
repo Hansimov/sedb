@@ -7,6 +7,7 @@ from tclogger import get_now_str, ts_to_str, str_to_ts, dict_to_str
 from typing import Literal, Union, TypedDict
 
 from .mongo_filter import to_mongo_filter
+from .mongo_pipeline import to_mongo_projection
 
 logger = TCLogger()
 
@@ -18,6 +19,8 @@ class MongoConfigsType(TypedDict):
 
 
 class MongoOperator:
+    date_fields = ["pubdate", "insert_at", "index_at"]
+
     def __init__(
         self,
         configs: MongoConfigsType,
@@ -115,6 +118,7 @@ class MongoOperator:
             "filter_index": filter_index,
             "filter_op": filter_op,
             "filter_range": filter_range,
+            "date_fields": self.date_fields,
         }
 
         if filter_range is None or estimate_count:
@@ -135,6 +139,8 @@ class MongoOperator:
         filter_index: str = None,
         filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
         filter_range: Union[int, str, tuple, list] = None,
+        include_fields: list[str] = None,
+        exclude_fields: list[str] = None,
         sort_index: str = None,
         sort_order: Literal["asc", "desc"] = "asc",
         is_date_index: bool = None,
@@ -145,6 +151,9 @@ class MongoOperator:
             filter_range=filter_range,
             is_date_index=is_date_index,
         )
+        projection = to_mongo_projection(
+            include_fields=include_fields, exclude_fields=exclude_fields
+        )
         if self.verbose:
             args_dict = {
                 "collection": collection,
@@ -154,10 +163,12 @@ class MongoOperator:
                 "sort_index": sort_index,
                 "sort_order": sort_order,
                 "filter_dict": filter_dict,
+                "include_fields": include_fields,
+                "exclude_fields": exclude_fields,
             }
             self.log_args(args_dict)
 
-        cursor = self.db[collection].find(filter_dict)
+        cursor = self.db[collection].find(filter_dict, projection=projection)
 
         if sort_index:
             if sort_order and sort_order.lower().startswith("desc"):
@@ -167,3 +178,8 @@ class MongoOperator:
             cursor = cursor.sort(sort_index, order)
 
         return cursor
+
+    def get_agg_cursor(
+        self, collection: str, pipeline: list[dict], batch_size: int = 10000
+    ):
+        return self.db[collection].aggregate(pipeline, batchSize=batch_size)
