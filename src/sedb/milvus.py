@@ -142,7 +142,7 @@ class MilvusOperator:
             value_strs = [f"'{value}'" for value in values]
         else:
             value_strs = [str(value) for value in values]
-        return f"{field} in ({','.join(value_strs)})"
+        return f"{field} in [{','.join(value_strs)}]"
 
     def get_expr_of_any_field_false(self, fields: list[str], default_value=None) -> str:
         field_exprs = []
