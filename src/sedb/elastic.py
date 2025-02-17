@@ -1,5 +1,5 @@
 from elasticsearch import Elasticsearch
-from tclogger import logger, logstr
+from tclogger import logger, logstr, get_now_str
 from typing import TypedDict
 
 
@@ -11,10 +11,22 @@ class ElasticConfigsType(TypedDict):
 
 
 class ElasticOperator:
-    def __init__(self, configs: ElasticConfigsType, verbose: bool = True):
+    def __init__(
+        self,
+        configs: ElasticConfigsType,
+        connect_at_init: bool = True,
+        connect_msg: str = None,
+        indent: int = 0,
+        verbose: bool = True,
+    ):
         self.configs = configs
-        self.init_configs()
+        self.connect_at_init = connect_at_init
+        self.connect_msg = connect_msg
+        self.indent = indent
         self.verbose = verbose
+        self.init_configs()
+        if self.connect_at_init:
+            self.connect(connect_msg=connect_msg)
 
     def init_configs(self):
         self.host = self.configs["host"]
@@ -23,7 +35,7 @@ class ElasticOperator:
         self.api_key = self.configs["api_key"]
         self.endpoint = f"https://{self.host}:{self.port}"
 
-    def connect(self):
+    def connect(self, connect_msg: str = None):
         """Connect to self-managed cluster with API Key authentication
         * https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/connecting.html#auth-apikey
 
@@ -36,10 +48,11 @@ class ElasticOperator:
         * https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/connecting.html#auth-bearer
         """
         if self.verbose:
-            logger.note(
-                f"> Connecting to Elasticsearch: "
-                f"{logstr.mesg('['+self.endpoint+']')}"
-            )
+            logger.note(f"> Connecting to: {logstr.mesg('['+self.endpoint+']')}")
+            logger.file(f"  * {get_now_str()}")
+            connect_msg = connect_msg or self.connect_msg
+            if connect_msg:
+                logger.file(f"  * {connect_msg}")
         try:
             self.client = Elasticsearch(
                 hosts=self.endpoint,
@@ -48,7 +61,7 @@ class ElasticOperator:
                 # basic_auth=(self.username, self.password),
             )
             if self.verbose:
-                logger.success(f"+ Connected:")
+                logger.success(f"✓ Connected:")
                 logger.mesg(self.client.info())
         except Exception as e:
             raise e
