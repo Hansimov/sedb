@@ -1,7 +1,9 @@
-from collections.abc import Generator
+from tclogger import logger, dict_to_str
 from typing import Union
 
 from .milvus import MilvusOperator
+from .elastic import ElasticOperator
+from .elastic_filter import to_elastic_filter
 
 
 class MilvusBridger:
@@ -29,24 +31,33 @@ class MilvusBridger:
         )
         return res_docs
 
-    def filter_ids_batch_generator(
+
+class ElasticBridger:
+    def __init__(self, elastic: ElasticOperator):
+        self.elastic = elastic
+
+    def filter_ids(
         self,
-        ids_batch_generator: Generator[list[str], None, None],
-        id_field: str,
-        expr: str = None,
+        index_name: str,
+        ids: list[str],
+        id_field: str = None,
+        exprs: Union[dict, list[dict]] = None,
         output_fields: list[str] = None,
-        batch_size: int = 1000,
-    ) -> Generator[list[dict], None, None]:
-        filter_params = {
-            "id_field": id_field,
-            "expr": expr,
-            "output_fields": output_fields,
+    ) -> list[dict]:
+        filter_dict = to_elastic_filter(
+            ids=ids, id_field=id_field, exprs=exprs, output_fields=output_fields
+        )
+        filter_path = "took,timed_out,hits.total,hits.hits._id"
+        if id_field:
+            filter_path += f",hits.hits._source.{id_field}"
+        if output_fields:
+            filter_path += "," + ",".join(
+                [f"hits.hits._source.{field}" for field in output_fields]
+            )
+        search_params = {
+            "index": index_name,
+            "body": filter_dict,
+            "filter_path": filter_path,
         }
-        res_docs = []
-        for idx, ids_batch in enumerate(ids_batch_generator):
-            res_docs.extend(self.filter_ids(ids_batch, **filter_params))
-            if len(res_docs) >= batch_size:
-                yield res_docs
-                res_docs = []
-        if res_docs:
-            yield res_docs
+        result = self.elastic.client.search(**search_params)
+        return result["hits"]["hits"]
