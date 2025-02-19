@@ -60,4 +60,4 @@ class ElasticBridger:
             "filter_path": filter_path,
         }
         result = self.elastic.client.search(**search_params)
-        return result["hits"]["hits"]
+        return result["hits"].get("hits", [])

@@ -143,6 +143,7 @@ class MongoOperator:
         exclude_fields: list[str] = None,
         sort_index: str = None,
         sort_order: Literal["asc", "desc"] = "asc",
+        skip_count: int = None,
         is_date_index: bool = None,
     ):
         filter_dict = to_mongo_filter(
@@ -176,6 +177,8 @@ class MongoOperator:
             else:
                 order = pymongo.ASCENDING
             cursor = cursor.sort(sort_index, order)
+        if skip_count:
+            cursor = cursor.skip(skip_count)
 
         return cursor
 
