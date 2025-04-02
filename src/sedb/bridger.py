@@ -1,9 +1,43 @@
-from tclogger import logger, dict_to_str
 from typing import Union
 
+from .mongo import MongoOperator
+from .mongo_pipeline import to_mongo_projection
 from .milvus import MilvusOperator
 from .elastic import ElasticOperator
 from .elastic_filter import to_elastic_filter
+
+
+class MongoBridger:
+    def __init__(self, mongo: MongoOperator):
+        self.mongo = mongo
+
+    def to_id_filter(self, ids: list[str], id_field: str) -> dict:
+        if ids:
+            return {"$match": {id_field: {"$in": ids}}}
+        else:
+            return None
+
+    def filter_ids(
+        self,
+        collection_name: str,
+        ids: list[str],
+        id_field: str,
+        pipeline: list[dict] = None,
+        output_fields: list[str] = None,
+    ) -> list[dict]:
+        collect = self.mongo.db[collection_name]
+        id_filter = self.to_id_filter(ids, id_field)
+        if output_fields:
+            projection = to_mongo_projection(include_fields=output_fields)
+        else:
+            projection = None
+        if not pipeline:
+            cursor = collect.find(filter=id_filter, projection=projection)
+        else:
+            if projection:
+                pipeline.append({"$project": projection})
+            cursor = collect.aggregate(pipeline=[id_filter, *pipeline])
+        return list(cursor)
 
 
 class MilvusBridger:

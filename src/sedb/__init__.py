@@ -10,4 +10,4 @@ from .mongo_filter import (
 from .mongo_pipeline import to_mongo_projection, to_mongo_pipeline
 from .milvus import MilvusOperator, MilvusConfigsType
 from .qdrant import QdrantOperator, QdrantConfigsType
-from .bridger import MilvusBridger, ElasticBridger
+from .bridger import MongoBridger, MilvusBridger, ElasticBridger
