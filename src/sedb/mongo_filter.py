@@ -1,6 +1,15 @@
 from typing import Literal, Union
 from tclogger import unify_ts_and_str, str_to_ts
 
+COUNT_ARG_KEYS = [
+    "collection",
+    "filter_index",
+    "filter_op",
+    "filter_range",
+    "estimate_count",
+]
+FILTER_ARG_KEYS = ["filter_index", "filter_op", "filter_range", "is_date_index"]
+
 
 def range_to_mongo_filter_and_sort_info(
     filter_index: str = None,
@@ -89,3 +98,11 @@ def to_mongo_filter(
         else:
             raise ValueError(f"× Invalid filter_op: {filter_op}")
     return filter_dict
+
+
+def extract_count_params_from_cursor_params(cursor_params: dict) -> dict:
+    return {key: cursor_params.get(key) for key in COUNT_ARG_KEYS}
+
+
+def extract_filter_params_from_cursor_params(cursor_params: dict) -> dict:
+    return {key: cursor_params.get(key) for key in FILTER_ARG_KEYS}

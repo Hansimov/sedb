@@ -18,6 +18,34 @@ class MongoConfigsType(TypedDict):
     dbname: str
 
 
+class MongoCursorParamsType(TypedDict):
+    collection: str
+    filter_index: str
+    filter_op: Literal["gt", "lt", "gte", "lte", "range"]
+    filter_range: Union[int, str, tuple, list]
+    include_fields: list[str]
+    exclude_fields: list[str]
+    sort_index: str
+    sort_order: Literal["asc", "desc"]
+    skip_count: int
+    is_date_index: bool
+
+
+class MongoCountParamsType(TypedDict):
+    collection: str
+    filter_index: str
+    filter_op: Literal["gt", "lt", "gte", "lte", "range"]
+    filter_range: Union[int, str, tuple, list]
+    estimate_count: bool
+
+
+class MongoFilterParamsType(TypedDict):
+    filter_index: str
+    filter_op: Literal["gt", "lt", "gte", "lte", "range"]
+    filter_range: Union[int, str, tuple, list]
+    is_date_index: bool
+
+
 class MongoOperator:
     date_fields = ["pubdate", "insert_at", "index_at"]
 
