@@ -6,7 +6,7 @@ from tclogger import TCLogger, logstr, FileLogger
 from tclogger import get_now_str, ts_to_str, str_to_ts, dict_to_str
 from typing import Literal, Union, TypedDict
 
-from .mongo_filter import to_mongo_filter
+from .mongo_filter import to_mongo_filter, update_filter
 from .mongo_pipeline import to_mongo_projection
 
 logger = TCLogger()
@@ -138,6 +138,7 @@ class MongoOperator:
         filter_index: Literal["insert_at", "pubdate"] = "insert_at",
         filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
         filter_range: Union[int, str, tuple, list] = None,
+        extra_filters: list[dict] = None,
         estimate_count: bool = False,
     ) -> int:
         logger.note(f"> Counting docs:", end=" ", verbose=self.verbose)
@@ -156,6 +157,8 @@ class MongoOperator:
             )
         else:
             filter_dict = to_mongo_filter(**filter_params)
+            if extra_filters:
+                filter_dict = update_filter(filter_dict, extra_filters=extra_filters)
             total_count = db_collect.count_documents(filter_dict)
             logger.success(f"[{total_count}]", verbose=self.verbose)
 
@@ -172,6 +175,7 @@ class MongoOperator:
         sort_index: str = None,
         sort_order: Literal["asc", "desc"] = "asc",
         skip_count: int = None,
+        extra_filters: list[dict] = None,
         is_date_index: bool = None,
     ):
         filter_dict = to_mongo_filter(
@@ -180,6 +184,8 @@ class MongoOperator:
             filter_range=filter_range,
             is_date_index=is_date_index,
         )
+        if extra_filters:
+            filter_dict = update_filter(filter_dict, extra_filters=extra_filters)
         projection = to_mongo_projection(
             include_fields=include_fields, exclude_fields=exclude_fields
         )
@@ -192,6 +198,8 @@ class MongoOperator:
                 "sort_index": sort_index,
                 "sort_order": sort_order,
                 "filter_dict": filter_dict,
+                "skip_count": skip_count,
+                "extra_filters": extra_filters,
                 "include_fields": include_fields,
                 "exclude_fields": exclude_fields,
             }

@@ -6,6 +6,7 @@ COUNT_ARG_KEYS = [
     "filter_index",
     "filter_op",
     "filter_range",
+    "extra_filters",
     "estimate_count",
 ]
 FILTER_ARG_KEYS = ["filter_index", "filter_op", "filter_range", "is_date_index"]
@@ -97,6 +98,18 @@ def to_mongo_filter(
                 raise ValueError(f"× Invalid filter_range: {filter_range}")
         else:
             raise ValueError(f"× Invalid filter_op: {filter_op}")
+    return filter_dict
+
+
+def update_filter(
+    filter_dict: dict, extra_filters: Union[dict, list[dict]] = None
+) -> dict:
+    if extra_filters:
+        if isinstance(extra_filters, dict):
+            filter_dict.update(extra_filters)
+        else:
+            for extra_filter in extra_filters:
+                filter_dict.update(extra_filter)
     return filter_dict
 
 

@@ -34,9 +34,10 @@ class MongoBridger:
         if not pipeline:
             cursor = collect.find(filter=id_filter, projection=projection)
         else:
+            full_pipeline = [id_filter, *pipeline]
             if projection:
-                pipeline.append({"$project": projection})
-            cursor = collect.aggregate(pipeline=[id_filter, *pipeline])
+                full_pipeline.append({"$project": projection})
+            cursor = collect.aggregate(pipeline=full_pipeline)
         return list(cursor)
 
 
