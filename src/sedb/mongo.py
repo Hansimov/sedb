@@ -222,3 +222,18 @@ class MongoOperator:
         self, collection: str, pipeline: list[dict], batch_size: int = 10000
     ):
         return self.db[collection].aggregate(pipeline, batchSize=batch_size)
+
+    def get_docs(
+        self,
+        collection: str,
+        ids: list[str],
+        id_field: str,
+        include_fields: list[str] = None,
+        exclude_fields: list[str] = None,
+    ) -> list[dict]:
+        id_filter = {id_field: {"$in": ids}}
+        projection = to_mongo_projection(
+            include_fields=include_fields, exclude_fields=exclude_fields
+        )
+        cursor = self.db[collection].find(filter=id_filter, projection=projection)
+        return list(cursor)
