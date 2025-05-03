@@ -106,8 +106,8 @@ class LLMClient:
         messages: list,
         model: str = None,
         enable_thinking: bool = None,
-        temperature: float = 0,
-        seed: int = 42,
+        temperature: float = None,
+        seed: int = None,
         stream: bool = None,
     ):
         headers = {
@@ -124,10 +124,11 @@ class LLMClient:
             "messages": self.init_messages + messages,
             "stream": stream,
         }
-        options = {
-            "temperature": temperature,
-            "seed": seed,
-        }
+        options = {}
+        if temperature is not None:
+            options["temperature"] = temperature
+        if seed is not None:
+            options["seed"] = seed
         if self.api_format == "ollama":
             payload["options"] = options
         else:
@@ -236,8 +237,8 @@ class LLMClient:
         messages: list,
         model: str = None,
         enable_thinking: bool = None,
-        temperature: float = 0,
-        seed: int = 42,
+        temperature: float = None,
+        seed: int = None,
         stream: bool = None,
     ) -> str:
         timer = Runtimer(verbose=False)
