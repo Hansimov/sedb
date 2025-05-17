@@ -26,6 +26,7 @@ class LLMConfigsType(TypedDict):
     verbose_content: bool = True
     verbose_usage: bool = True
     verbose_finish: bool = True
+    verbose: bool = False
 
 
 class LLMClient:
@@ -46,6 +47,7 @@ class LLMClient:
         verbose_think: bool = True,
         verbose_usage: bool = True,
         verbose_finish: bool = True,
+        verbose: bool = False,
     ):
         self.endpoint = endpoint
         self.api_key = api_key
@@ -63,6 +65,7 @@ class LLMClient:
         self.verbose_think = verbose_think
         self.verbose_usage = verbose_usage
         self.verbose_finish = verbose_finish
+        self.verbose = verbose
 
         self.is_thinking = False
 
@@ -240,11 +243,15 @@ class LLMClient:
         temperature: float = None,
         seed: int = None,
         stream: bool = None,
+        verbose: bool = None,
     ) -> str:
         timer = Runtimer(verbose=False)
         timer.start_time()
         model = self.get_model_str(model)
         stream = self.get_stream_bool(stream)
+
+        verbose = verbose if verbose is not None else self.verbose
+        logger.enter_quiet(not verbose)
 
         if self.verbose_user:
             user_prompt = messages[-1]["content"]
@@ -275,6 +282,8 @@ class LLMClient:
             logger.note(f" ({elapsed_time}) {logstr.file(model_name_str)}")
         else:
             logger.note("", verbose=self.verbose_content)
+
+        logger.exit_quiet(not verbose)
         return response_content
 
 
