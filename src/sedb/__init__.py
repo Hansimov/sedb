@@ -12,3 +12,4 @@ from .milvus import MilvusOperator, MilvusConfigsType
 from .qdrant import QdrantOperator, QdrantConfigsType
 from .bridger import MongoBridger, MilvusBridger, ElasticBridger
 from .llm import LLMConfigsType, LLMClient, LLMClientByConfig
+from .embed import EmbedConfigsType, EmbedClient, EmbedClientByConfig
