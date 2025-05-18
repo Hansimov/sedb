@@ -1,6 +1,6 @@
 [project]
 name = "sedb"
-version = "0.6.1"
+version = "0.7"
 authors = [
     { name="Hansimov" },
 ]
