@@ -1,4 +1,4 @@
-import rocksdbpy
+from rocksdict import Rdict, Options
 
 from pathlib import Path
 from tclogger import logger, logstr, get_now_str, brk
@@ -10,18 +10,27 @@ class RocksConfigsType(TypedDict):
 
 
 class RocksOperator:
+    """rocksdict API documentation
+    * https://rocksdict.github.io/RocksDict/rocksdict.html
+
+    RocksDB include headers:
+    * https://github.com/facebook/rocksdb/blob/10.4.fb/include/rocksdb/db.h
+    """
+
     def __init__(
         self,
         configs: RocksConfigsType,
         connect_at_init: bool = True,
         connect_msg: str = None,
         indent: int = 0,
+        raw_mode: bool = False,
         verbose: bool = True,
     ):
         self.configs = configs
         self.connect_at_init = connect_at_init
         self.connect_msg = connect_msg
         self.indent = indent
+        self.raw_mode = raw_mode
         self.verbose = verbose
         self.init_configs()
         if self.connect_at_init:
@@ -29,6 +38,11 @@ class RocksOperator:
 
     def init_configs(self):
         self.db_path = Path(self.configs["db_path"])
+        options = Options(raw_mode=self.raw_mode)
+        options.create_if_missing(True)
+        options.set_max_file_opening_threads(128)
+        options.set_max_background_jobs(128)
+        self.db_options = options
 
     def connect(self, connect_msg: str = None):
         db_str = logstr.mesg(brk(self.db_path))
@@ -43,17 +57,34 @@ class RocksOperator:
                 status = "Created"
             else:
                 status = "Opened"
-            self.db = rocksdbpy.open_default(str(self.db_path.resolve()))
+            self.db = Rdict(path=str(self.db_path.resolve()), options=self.db_options)
             if self.verbose:
-                logger.okay(f"  * RocksDB: {brk(status)}", self.indent)
+                count = self.get_total_count()
+                count_str = f"{count} keys"
+                logger.okay(f"  + RocksDB: {brk(status)} {brk(count_str)}", self.indent)
         except Exception as e:
             raise e
+
+    def get_total_count(self) -> int:
+        """- https://rocksdict.github.io/RocksDict/rocksdict.html#Rdict.property_int_value
+        - https://github.com/facebook/rocksdb/blob/10.4.fb/include/rocksdb/db.h#L1445"""
+        return self.db.property_int_value("rocksdb.estimate-num-keys")
+
+    def flush(self):
+        self.db.flush()
+        status = "Flushed"
+        if self.verbose:
+            logger.file(f"  * RocksDB: {brk(status)}", self.indent)
 
     def close(self):
         self.db.close()
         status = "Closed"
         if self.verbose:
-            logger.warn(f"  * RocksDB: {brk(status)}", self.indent)
+            logger.warn(f"  - RocksDB: {brk(status)}", self.indent)
 
     def __del__(self):
-        self.close()
+        try:
+            self.flush()
+            self.close()
+        except Exception as e:
+            pass

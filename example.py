@@ -3,6 +3,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from datetime import datetime
+
 from sedb import MongoOperator, MongoConfigsType
 from sedb import RocksOperator, RocksConfigsType
 
@@ -46,11 +48,10 @@ def test_mongo():
 
 
 def test_rocks():
-    rocks_configs = {
-        "db_path": "XXXXX/rocksdb",
-    }
-
+    rocks_configs = {"db_path": "z.rkdb"}
     rocks = RocksOperator(configs=rocks_configs)
+    rocks.db.put("now", str(datetime.now()))
+    print("  * now:", rocks.db.key_may_exist("now"), rocks.db.get("now"))
 
 
 if __name__ == "__main__":
