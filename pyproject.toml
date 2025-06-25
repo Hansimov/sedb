@@ -1,6 +1,6 @@
 [project]
 name = "sedb"
-version = "0.7.1"
+version = "0.8.0"
 authors = [
     { name="Hansimov" },
 ]
@@ -15,9 +15,9 @@ classifiers = [
 dependencies = [ "tclogger" ]
 
 [project.optional-dependencies]
-common = [ "pymongo", "elasticsearch", "redis" ]
+common = [ "pymongo", "elasticsearch", "redis", "rocksdict" ]
 vector = [ "pymilvus", "qdrant-client" ]
-all = [ "pymongo", "elasticsearch", "pymilvus", "qdrant-client", "redis" ]
+all = [ "pymongo", "elasticsearch", "redis", "rocksdict", "pymilvus", "qdrant-client" ]
 
 [project.urls]
 Homepage = "https://github.com/Hansimov/sedb"
