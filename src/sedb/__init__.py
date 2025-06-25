@@ -8,6 +8,7 @@ from .mongo_filter import (
     extract_filter_params_from_cursor_params,
 )
 from .mongo_pipeline import to_mongo_projection, to_mongo_pipeline
+from .rocks import RocksOperator, RocksConfigsType
 from .milvus import MilvusOperator, MilvusConfigsType
 from .qdrant import QdrantOperator, QdrantConfigsType
 from .bridger import MongoBridger, MilvusBridger, ElasticBridger
