@@ -1,10 +1,11 @@
-from typing import Union
+from typing import Union, Any
 
 from .mongo import MongoOperator
 from .mongo_pipeline import to_mongo_projection
 from .milvus import MilvusOperator
 from .elastic import ElasticOperator
 from .elastic_filter import to_elastic_filter
+from .rocks import RocksOperator
 
 
 class MongoBridger:
@@ -96,3 +97,52 @@ class ElasticBridger:
         }
         result = self.elastic.client.search(**search_params)
         return result["hits"].get("hits", [])
+
+
+class RocksBridger:
+    def __init__(self, rocks: RocksOperator):
+        self.rocks = rocks
+
+    def filter_ids(self, ids: list[str]) -> list[str]:
+        res = []
+        for id in ids:
+            is_exists = self.rocks.db.key_may_exist(id)
+            if is_exists:
+                res.append(id)
+        return res
+
+    def filter_ids_for_dict(
+        self, ids: list[str], output_fields: list[str] = None
+    ) -> list[dict]:
+        res = []
+        for id in ids:
+            is_exists = self.rocks.db.key_may_exist(id)
+            if is_exists:
+                doc = {"_id": id}
+                if output_fields:
+                    value: dict = self.rocks.db.get(id)
+                    if value is None:
+                        continue
+                    for field in output_fields:
+                        if field in value:
+                            doc[field] = value[field]
+                res.append(doc)
+        return res
+
+    def filter_ids_for_entity(
+        self, ids: list[str], output_fields: list[str] = None
+    ) -> list[dict]:
+        res = []
+        for id in ids:
+            is_exists = self.rocks.db.key_may_exist(id)
+            if is_exists:
+                doc = {"_id": id}
+                if output_fields:
+                    entity: list[tuple[Any, Any]] = self.rocks.db.get_entity(id)
+                    if entity:
+                        entity_dict = dict(entity)
+                        for field in output_fields:
+                            if field in entity_dict:
+                                doc[field] = entity_dict[field]
+                res.append(doc)
+        return res

@@ -11,6 +11,6 @@ from .mongo_pipeline import to_mongo_projection, to_mongo_pipeline
 from .rocks import RocksOperator, RocksConfigsType
 from .milvus import MilvusOperator, MilvusConfigsType
 from .qdrant import QdrantOperator, QdrantConfigsType
-from .bridger import MongoBridger, MilvusBridger, ElasticBridger
+from .bridger import MongoBridger, MilvusBridger, ElasticBridger, RocksBridger
 from .llm import LLMConfigsType, LLMClient, LLMClientByConfig
 from .embed import EmbedConfigsType, EmbedClient, EmbedClientByConfig
