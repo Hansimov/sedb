@@ -108,6 +108,9 @@ class RocksBridger:
     ) -> Union[list[str], list[dict]]:
         res = []
         for id in ids:
+            # NOTE: Even when key doesn't exists, `key_may_exist()`` might still return True
+            # See: https://rocksdict.github.io/RocksDict/rocksdict.html#Rdict.key_may_exist
+            # TODO: Improve the accuracy with `get()` when `return_value` is True
             is_exists = self.rocks.db.key_may_exist(id)
             if is_exists:
                 if return_value:
@@ -138,13 +141,11 @@ class RocksBridger:
             is_id_exists = False
             for field in output_fields:
                 key = f"{id}{sep}{field}"
-                is_key_exists = self.rocks.db.key_may_exist(key)
-                if is_key_exists:
+                value = self.rocks.db.get(key)
+                if value is not None:
                     is_id_exists = True
                     if return_value:
-                        value = self.rocks.db.get(key)
-                        if value is not None:
-                            doc[field] = value
+                        doc[field] = value
             if is_id_exists:
                 res.append(doc)
         return res
