@@ -103,12 +103,19 @@ class RocksBridger:
     def __init__(self, rocks: RocksOperator):
         self.rocks = rocks
 
-    def filter_ids(self, ids: list[str]) -> list[str]:
+    def filter_ids(
+        self, ids: list[str], return_value: bool = False
+    ) -> Union[list[str], list[dict]]:
         res = []
         for id in ids:
             is_exists = self.rocks.db.key_may_exist(id)
             if is_exists:
-                res.append(id)
+                if return_value:
+                    value = self.rocks.db.get(id)
+                    if value is not None:
+                        res.append({"key": id, "value": value})
+                else:
+                    res.append(id)
         return res
 
     def filter_ids_for_dict(
