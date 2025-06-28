@@ -118,6 +118,37 @@ class RocksBridger:
                     res.append(id)
         return res
 
+    def filter_ids_with_seps(
+        self,
+        ids: list[str],
+        return_value: bool = False,
+        sep: str = ".",
+        output_fields: list[str] = None,
+    ) -> list[dict]:
+        """
+        - Inputs: `[id1, id2, id3, ...], [field1, field2, ...]`
+        - Docs: `[{id.field: value}, ...]`
+        - Output: `[{_id: id, field: value}]`
+        """
+        if output_fields is None:
+            return self.filter_ids(ids, return_value=return_value)
+        res = []
+        for id in ids:
+            doc = {"_id": id}
+            is_id_exists = False
+            for field in output_fields:
+                key = f"{id}{sep}{field}"
+                is_key_exists = self.rocks.db.key_may_exist(key)
+                if is_key_exists:
+                    is_id_exists = True
+                    if return_value:
+                        value = self.rocks.db.get(key)
+                        if value is not None:
+                            doc[field] = value
+            if is_id_exists:
+                res.append(doc)
+        return res
+
     def filter_ids_for_dict(
         self, ids: list[str], output_fields: list[str] = None
     ) -> list[dict]:
