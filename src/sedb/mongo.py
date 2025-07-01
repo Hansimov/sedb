@@ -177,6 +177,7 @@ class MongoOperator:
         skip_count: int = None,
         extra_filters: list[dict] = None,
         is_date_index: bool = None,
+        no_cursor_timeout: bool = False,
     ):
         filter_dict = to_mongo_filter(
             filter_index=filter_index,
@@ -202,10 +203,13 @@ class MongoOperator:
                 "extra_filters": extra_filters,
                 "include_fields": include_fields,
                 "exclude_fields": exclude_fields,
+                "no_cursor_timeout": no_cursor_timeout,
             }
             self.log_args(args_dict)
 
-        cursor = self.db[collection].find(filter_dict, projection=projection)
+        cursor = self.db[collection].find(
+            filter_dict, projection=projection, no_cursor_timeout=no_cursor_timeout
+        )
 
         if sort_index:
             if sort_order and sort_order.lower().startswith("desc"):

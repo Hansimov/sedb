@@ -7,6 +7,8 @@ from typing import TypedDict, Union
 
 class RocksConfigsType(TypedDict):
     db_path: Union[str, Path]
+    target_file_size_base_mb: int = 64
+    write_buffer_size_mb: int = 64
 
 
 class RocksOperator:
@@ -42,6 +44,12 @@ class RocksOperator:
         options.create_if_missing(True)
         options.set_max_file_opening_threads(128)
         options.set_max_background_jobs(128)
+        options.set_target_file_size_base(
+            self.configs.get("target_file_size_base_mb", 64) * 1024 * 1024
+        )
+        options.set_write_buffer_size(
+            self.configs.get("write_buffer_size_mb", 64) * 1024 * 1024
+        )
         self.db_options = options
 
     def connect(self, connect_msg: str = None):
