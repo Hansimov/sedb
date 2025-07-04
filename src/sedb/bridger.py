@@ -135,19 +135,25 @@ class RocksBridger:
         """
         if output_fields is None:
             return self.filter_ids(ids, return_value=return_value)
+
+        all_keys = [f"{id}{sep}{field}" for id in ids for field in output_fields]
+        all_values = self.rocks.db.get(all_keys)
+
         res = []
+        value_idx = 0
         for id in ids:
             doc = {"_id": id}
             is_id_exists = False
             for field in output_fields:
-                key = f"{id}{sep}{field}"
-                value = self.rocks.db.get(key)
+                value = all_values[value_idx]
+                value_idx += 1
                 if value is not None:
                     is_id_exists = True
                     if return_value:
                         doc[field] = value
             if is_id_exists:
                 res.append(doc)
+
         return res
 
     def filter_ids_for_dict(
