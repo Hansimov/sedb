@@ -8,6 +8,7 @@ from typing import Literal, Union, TypedDict
 
 from .mongo_filter import to_mongo_filter, update_filter
 from .mongo_pipeline import to_mongo_projection
+from .message import ConnectMessager
 
 logger = TCLogger()
 
@@ -54,6 +55,7 @@ class MongoOperator:
         configs: MongoConfigsType,
         connect_at_init: bool = True,
         connect_msg: str = None,
+        connect_cls: type = None,
         lock: threading.Lock = None,
         log_path: Union[str, Path] = None,
         verbose: bool = True,
@@ -61,18 +63,24 @@ class MongoOperator:
     ):
         self.configs = configs
         self.verbose = verbose
-        self.indent = indent
-        logger.indent(self.indent)
         self.init_configs()
         self.connect_at_init = connect_at_init
         self.connect_msg = connect_msg
+        self.msgr = ConnectMessager(
+            msg=connect_msg,
+            cls=connect_cls,
+            opr=self,
+            dbt="mongo",
+            verbose=verbose,
+            indent=indent,
+        )
         self.lock = lock or threading.Lock()
         if log_path:
             self.file_logger = FileLogger(log_path)
         else:
             self.file_logger = None
         if self.connect_at_init:
-            self.connect(connect_msg=connect_msg)
+            self.connect()
 
     def init_configs(self):
         self.host = self.configs["host"]
@@ -80,18 +88,14 @@ class MongoOperator:
         self.dbname = self.configs["dbname"]
         self.endpoint = f"mongodb://{self.host}:{self.port}"
 
-    def connect(self, connect_msg: str = None):
-        connect_msg = connect_msg or self.connect_msg
-        if self.verbose:
-            logger.note(f"> Connecting to: {logstr.mesg('['+self.endpoint+']')}")
-            logger.file(f"  * {get_now_str()}")
-            if connect_msg:
-                logger.file(f"  * {connect_msg}")
+    def connect(self):
+        self.msgr.log_endpoint()
+        self.msgr.log_now()
+        self.msgr.log_msg()
         self.client = pymongo.MongoClient(self.endpoint)
         try:
             self.db = self.client[self.dbname]
-            if self.verbose:
-                logger.file(f"  * database: {logstr.success(self.dbname)}")
+            self.msgr.log_dbname()
         except Exception as e:
             raise e
 
@@ -235,7 +239,10 @@ class MongoOperator:
         include_fields: list[str] = None,
         exclude_fields: list[str] = None,
     ) -> list[dict]:
-        id_filter = {id_field: {"$in": ids}}
+        if not isinstance(ids, list):
+            id_filter = {id_field: ids}
+        else:
+            id_filter = {id_field: {"$in": ids}}
         projection = to_mongo_projection(
             include_fields=include_fields, exclude_fields=exclude_fields
         )
