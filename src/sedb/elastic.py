@@ -1,6 +1,8 @@
 from elasticsearch import Elasticsearch
-from tclogger import logger, logstr, get_now_str
+from tclogger import logger
 from typing import TypedDict
+
+from .message import ConnectMessager
 
 
 class ElasticConfigsType(TypedDict):
@@ -16,8 +18,9 @@ class ElasticOperator:
         configs: ElasticConfigsType,
         connect_at_init: bool = True,
         connect_msg: str = None,
-        indent: int = 0,
+        connect_cls: type = None,
         verbose: bool = True,
+        indent: int = 0,
     ):
         self.configs = configs
         self.connect_at_init = connect_at_init
@@ -25,6 +28,14 @@ class ElasticOperator:
         self.indent = indent
         self.verbose = verbose
         self.init_configs()
+        self.msgr = ConnectMessager(
+            msg=connect_msg,
+            cls=connect_cls,
+            opr=self,
+            dbt="elastic",
+            verbose=verbose,
+            indent=indent,
+        )
         if self.connect_at_init:
             self.connect(connect_msg=connect_msg)
 
@@ -47,12 +58,9 @@ class ElasticOperator:
         Connect to self-managed cluster with HTTP Bearer authentication
         * https://www.elastic.co/guide/en/elasticsearch/client/python-api/current/connecting.html#auth-bearer
         """
-        if self.verbose:
-            logger.note(f"> Connecting to: {logstr.mesg('['+self.endpoint+']')}")
-            logger.file(f"  * {get_now_str()}")
-            connect_msg = connect_msg or self.connect_msg
-            if connect_msg:
-                logger.file(f"  * {connect_msg}")
+        self.msgr.log_endpoint()
+        self.msgr.log_now()
+        self.msgr.log_msg()
         try:
             self.client = Elasticsearch(
                 hosts=self.endpoint,
@@ -61,7 +69,13 @@ class ElasticOperator:
                 # basic_auth=(self.username, self.password),
             )
             if self.verbose:
-                logger.success(f"✓ Connected:")
-                logger.mesg(self.client.info())
+                client_info = self.client.info() or {}
+                client_info_str = str(dict(self.client.info() or {}))
+                status_str = "✓ Connected:"
+                if client_info:
+                    logger.okay(status_str)
+                else:
+                    logger.warn(status_str)
+                logger.mesg(f"  * {client_info_str}", indent=self.indent)
         except Exception as e:
             raise e

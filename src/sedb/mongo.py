@@ -62,10 +62,11 @@ class MongoOperator:
         indent: int = 0,
     ):
         self.configs = configs
-        self.verbose = verbose
-        self.init_configs()
         self.connect_at_init = connect_at_init
         self.connect_msg = connect_msg
+        self.verbose = verbose
+        self.indent = indent
+        self.init_configs()
         self.msgr = ConnectMessager(
             msg=connect_msg,
             cls=connect_cls,

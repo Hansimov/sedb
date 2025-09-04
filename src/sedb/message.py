@@ -47,15 +47,15 @@ class ConnectMessager:
                 src_msg_str = ""
 
             if self.dst_msg:
-                dst_msg_str = f"{logstr.mesg(self.dst_msg)}"
+                dst_msg_str = f"{logstr.okay(self.dst_msg)}"
             elif self.dbt:
-                dst_msg_str = f"{logstr.mesg(brk(self.dbt))}"
+                dst_msg_str = f"{logstr.okay(brk(self.dbt))}"
             else:
                 dst_msg_str = ""
 
             msg_str = f"  * {src_msg_str} -> {dst_msg_str}"
         else:
-            msg_str = self.msg
+            msg_str = f"  * {self.msg}"
 
         logger.mesg(msg_str, **self.vparams)
 
