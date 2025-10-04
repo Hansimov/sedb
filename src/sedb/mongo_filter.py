@@ -1,23 +1,21 @@
-from typing import Literal, Union
+from typing import Union
 from tclogger import unify_ts_and_str, str_to_ts
 
-COUNT_ARG_KEYS = [
-    "collection",
-    "filter_index",
-    "filter_op",
-    "filter_range",
-    "extra_filters",
-    "estimate_count",
-]
-FILTER_ARG_KEYS = ["filter_index", "filter_op", "filter_range", "is_date_index"]
+from .mongo_types import FilterIndexType, FilterOpType, FilterRangeType, SortOrderType
+from .mongo_types import (
+    MongoCursorParamsType,
+    MongoCountParamsType,
+    MongoFilterParamsType,
+)
+from .mongo_types import COUNT_ARG_KEYS, FILTER_ARG_KEYS, DATE_FIELDS
 
 
 def range_to_mongo_filter_and_sort_info(
-    filter_index: str = None,
+    filter_index: FilterIndexType = None,
     start_val: Union[str, int, None] = None,
     end_val: Union[str, int, None] = None,
-    sort_index: str = None,
-    sort_order: Literal["asc", "desc"] = "asc",
+    sort_index: FilterIndexType = None,
+    sort_order: SortOrderType = "asc",
     is_date_index: bool = None,
 ) -> tuple[dict, dict]:
     filter_op = None
@@ -55,10 +53,10 @@ def range_to_mongo_filter_and_sort_info(
 
 
 def to_mongo_filter(
-    filter_index: str = None,
-    filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
-    filter_range: Union[int, str, tuple, list] = None,
-    date_fields: list[str] = ["pubdate", "insert_at", "index_at"],
+    filter_index: FilterIndexType = None,
+    filter_op: FilterOpType = "gte",
+    filter_range: FilterRangeType = None,
+    date_fields: list[str] = DATE_FIELDS,
     is_date_index: bool = None,
 ) -> dict:
     filter_dict = {}
@@ -113,9 +111,13 @@ def update_filter(
     return filter_dict
 
 
-def extract_count_params_from_cursor_params(cursor_params: dict) -> dict:
+def extract_count_params_from_cursor_params(
+    cursor_params: MongoCursorParamsType,
+) -> MongoCountParamsType:
     return {key: cursor_params.get(key) for key in COUNT_ARG_KEYS}
 
 
-def extract_filter_params_from_cursor_params(cursor_params: dict) -> dict:
+def extract_filter_params_from_cursor_params(
+    cursor_params: MongoCursorParamsType,
+) -> MongoFilterParamsType:
     return {key: cursor_params.get(key) for key in FILTER_ARG_KEYS}

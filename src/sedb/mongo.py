@@ -1,11 +1,11 @@
 import pymongo
 import threading
 
-from pathlib import Path
-from tclogger import TCLogger, logstr, FileLogger
+from tclogger import TCLogger, logstr, FileLogger, PathType
 from tclogger import get_now_str, ts_to_str, str_to_ts, dict_to_str
-from typing import Literal, Union, TypedDict
 
+from .mongo_types import MongoConfigsType, DATE_FIELDS
+from .mongo_types import FilterOpType, FilterRangeType, FilterIndexType, SortOrderType
 from .mongo_filter import to_mongo_filter, update_filter
 from .mongo_pipeline import to_mongo_projection
 from .message import ConnectMessager
@@ -13,43 +13,7 @@ from .message import ConnectMessager
 logger = TCLogger()
 
 
-class MongoConfigsType(TypedDict):
-    host: str
-    port: int
-    dbname: str
-
-
-class MongoCursorParamsType(TypedDict):
-    collection: str
-    filter_index: str
-    filter_op: Literal["gt", "lt", "gte", "lte", "range"]
-    filter_range: Union[int, str, tuple, list]
-    include_fields: list[str]
-    exclude_fields: list[str]
-    sort_index: str
-    sort_order: Literal["asc", "desc"]
-    skip_count: int
-    is_date_index: bool
-
-
-class MongoCountParamsType(TypedDict):
-    collection: str
-    filter_index: str
-    filter_op: Literal["gt", "lt", "gte", "lte", "range"]
-    filter_range: Union[int, str, tuple, list]
-    estimate_count: bool
-
-
-class MongoFilterParamsType(TypedDict):
-    filter_index: str
-    filter_op: Literal["gt", "lt", "gte", "lte", "range"]
-    filter_range: Union[int, str, tuple, list]
-    is_date_index: bool
-
-
 class MongoOperator:
-    date_fields = ["pubdate", "insert_at", "index_at"]
-
     def __init__(
         self,
         configs: MongoConfigsType,
@@ -57,7 +21,7 @@ class MongoOperator:
         connect_msg: str = None,
         connect_cls: type = None,
         lock: threading.Lock = None,
-        log_path: Union[str, Path] = None,
+        log_path: PathType = None,
         verbose: bool = True,
         indent: int = 0,
     ):
@@ -67,6 +31,7 @@ class MongoOperator:
         self.verbose = verbose
         self.indent = indent
         self.init_configs()
+        self.date_fields = DATE_FIELDS
         self.msgr = ConnectMessager(
             msg=connect_msg,
             cls=connect_cls,
@@ -108,14 +73,10 @@ class MongoOperator:
             error_str = dict_to_str(error_info, is_colored=False)
             self.file_logger.log(error_str, "error")
 
-    def log_args(
-        self,
-        args_dict: dict,
-        date_fields: list[str] = ["pubdate", "insert_at", "index_at"],
-    ):
+    def log_args(self, args_dict: dict):
         filter_index = args_dict["filter_index"]
         filter_range = args_dict["filter_range"]
-        if filter_index and filter_index.lower() in date_fields:
+        if filter_index and filter_index.lower() in self.date_fields:
             if isinstance(filter_range, (tuple, list)):
                 filter_range_ts = [
                     str_to_ts(i) if isinstance(i, str) else i for i in filter_range
@@ -140,9 +101,9 @@ class MongoOperator:
     def get_total_count(
         self,
         collection: str,
-        filter_index: Literal["insert_at", "pubdate"] = "insert_at",
-        filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
-        filter_range: Union[int, str, tuple, list] = None,
+        filter_index: FilterIndexType = "insert_at",
+        filter_op: FilterOpType = "gte",
+        filter_range: FilterRangeType = None,
         extra_filters: list[dict] = None,
         estimate_count: bool = False,
     ) -> int:
@@ -173,12 +134,12 @@ class MongoOperator:
         self,
         collection: str,
         filter_index: str = None,
-        filter_op: Literal["gt", "lt", "gte", "lte", "range"] = "gte",
-        filter_range: Union[int, str, tuple, list] = None,
+        filter_op: FilterOpType = "gte",
+        filter_range: FilterRangeType = None,
         include_fields: list[str] = None,
         exclude_fields: list[str] = None,
         sort_index: str = None,
-        sort_order: Literal["asc", "desc"] = "asc",
+        sort_order: SortOrderType = "asc",
         skip_count: int = None,
         extra_filters: list[dict] = None,
         is_date_index: bool = None,
