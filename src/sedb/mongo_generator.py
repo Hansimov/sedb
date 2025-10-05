@@ -23,10 +23,8 @@ class MongoDocsGenerator:
     - `init_mongo_cursor`
     - `init_mongo_count`
     - `init_progress_bar`
-    - `init_docs_generator`
 
     One-step initialization:
-    - `init_mongo`
     - `init_all_with_cli_args`
     """
 
@@ -34,9 +32,9 @@ class MongoDocsGenerator:
         pass
 
     def init_mongo(self, configs: MongoConfigsType):
-        """Must calls this before using `self.mongo`."""
-        if hasattr(self, "mongo") and isinstance(self.mongo, MongoOperator):
-            return
+        """Must calls this before using `self.mongo`. \n
+        Use `cli_args_to_mongo_configs()` to pass params from CLI args.
+        """
         self.configs = configs
         self.mongo = MongoOperator(configs=self.configs, connect_cls=self.__class__)
 
@@ -52,13 +50,16 @@ class MongoDocsGenerator:
         sort_order: SortOrderType = None,
         skip_count: int = None,
         extra_filters: Union[dict, list[dict]] = None,
-        no_cursor_timeout: bool = True,
+        no_cursor_timeout: bool = False,
         # non-cursor args
         max_count: int = None,
         estimate_count: bool = False,
         batch_size: int = 10000,
     ):
-        """Must call this before using `self.cursor`."""
+        """Must call this before using `self.cursor`. \n
+        Use `cli_args_to_mongo_extend_params()` to pass params from CLI args.
+        """
+        self.collection = collection
         self.cursor_params: MongoCursorParamsType = {
             "collection": collection,
             "filter_index": filter_index,
@@ -86,14 +87,15 @@ class MongoDocsGenerator:
         self.count_params["estimate_count"] = self.estimate_count
         self.total_count = self.mongo.get_total_count(**self.count_params)
         if self.total_count == 0:
-            logger.warn(f"× No doc found in cursor")
+            cursor_info_str = f"[{logstr.okay(self.configs['dbname'])}:{logstr.mesg(self.collection)}]"
+            logger.warn(f"× No doc found in cursor: {cursor_info_str}")
             self.cursor = None
             return
         if self.max_count:
             self.total_count = min(self.total_count, self.max_count)
 
     def init_progress_bar(self):
-        """Must call this before logging progress of iterating cursor."""
+        """Must call this before logging progress when iterating cursor."""
         self.doc_bar = TCLogbar(head=logstr.note("  * Doc:"))
         self.doc_bar.set_total(self.total_count)
         skip_count = self.cursor_params.get("skip_count")
@@ -103,10 +105,13 @@ class MongoDocsGenerator:
         self.doc_bar.update(flush=True)
 
     def init_all_with_cli_args(self):
-        """Must call `init_mongo()` before using this."""
+        """One-step initialization with CLI args. \n"""
         arg_parser = MongoDocsGeneratorArgParser()
         args = arg_parser.args
-        self.init_mongo_cursor(**mongo_args_to_params(args))
+        mongo_configs = cli_args_to_mongo_configs(args)
+        self.init_mongo(configs=mongo_configs)
+        extend_params = cli_args_to_mongo_extend_params(args)
+        self.init_mongo_cursor(**extend_params)
         self.init_mongo_count()
         self.init_progress_bar()
 
@@ -140,8 +145,10 @@ class MongoDocsGenerator:
             return
         self.doc_bar.update(len(docs_batch), flush=True)
 
-    def docs_generator(self) -> Generator[list[dict], None, None]:
-        """Must call `init_mongo_cursor()`, `init_mongo_count()`, `init_progress_bar()` before using this."""
+    def docs_batch_generator(self) -> Generator[list[dict], None, None]:
+        """Before using this, must call: \n
+        - `init_mongo`, `init_mongo_cursor()`, `init_mongo_count()`, `init_progress_bar()`
+        """
         if not self.check_before_generate():
             return
         docs_batch = []
@@ -162,6 +169,10 @@ class MongoDocsGenerator:
 class MongoDocsGeneratorArgParser(argparse.ArgumentParser):
     def __init__(self, *args, **kwargs):
         super(MongoDocsGeneratorArgParser, self).__init__(*args, **kwargs)
+        # config args: host, port, dbname
+        self.add_argument("-H", "--host", type=str, default="localhost")
+        self.add_argument("-P", "--port", type=int, default=27017)
+        self.add_argument("-D", "--dbname", type=str)
         # cursor args: collection
         self.add_argument("-c", "--mongo-collection", type=str)
         # cursor args: filters
@@ -182,15 +193,24 @@ class MongoDocsGeneratorArgParser(argparse.ArgumentParser):
         # batch args: batch-size
         self.add_argument("-b", "--batch-size", type=int, default=10000)
         # run args: dry-run
-        self.add_argument("-d", "--dry-run", action="store_true", default=False)
+        self.add_argument("-u", "--dry-run", action="store_true", default=False)
         self.args = self.parse_args()
 
 
-def mongo_args_to_params(args: argparse.Namespace) -> MongoExtendParamsType:
+def cli_args_to_mongo_configs(args: argparse.Namespace) -> MongoConfigsType:
+    mongo_configs: MongoConfigsType = {
+        "host": args.host,
+        "port": args.port,
+        "dbname": args.dbname,
+    }
+    return mongo_configs
+
+
+def cli_args_to_mongo_extend_params(args: argparse.Namespace) -> MongoExtendParamsType:
     common_params = {
         "collection": args.mongo_collection,
         "skip_count": args.skip_count,
-        "no_cursor_timeout": True,
+        "no_cursor_timeout": False,
     }
 
     if args.no_filter:
@@ -198,6 +218,8 @@ def mongo_args_to_params(args: argparse.Namespace) -> MongoExtendParamsType:
             "filter_index": None,
             "filter_op": "range",
             "filter_range": [None, None],
+        }
+        sort_params = {
             "sort_index": None,
             "sort_order": None,
         }
@@ -206,6 +228,8 @@ def mongo_args_to_params(args: argparse.Namespace) -> MongoExtendParamsType:
             "filter_index": args.filter_index,
             "filter_op": "range",
             "filter_range": [args.range_start, args.range_end],
+        }
+        sort_params = {
             "sort_index": args.filter_index,
             "sort_order": args.sort_order,
         }
@@ -238,6 +262,7 @@ def mongo_args_to_params(args: argparse.Namespace) -> MongoExtendParamsType:
     extend_params = {
         **common_params,
         **filter_params,
+        **sort_params,
         **fields_params,
         **others_params,
     }

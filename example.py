@@ -8,6 +8,7 @@ from tclogger import logger, logstr, get_now_str, dict_to_str
 from sedb import MongoOperator, MongoConfigsType
 from sedb import RocksOperator, RocksConfigsType
 from sedb import filter_str_to_params, filters_str_to_mongo_filter
+from sedb import MongoDocsGenerator
 
 
 def test_mongo():
@@ -69,11 +70,21 @@ def test_filters_str_to_mongo_filter(filters_str: str):
     logger.okay(dict_to_str(mongo_filter, add_quotes=True), indent=2)
 
 
+def test_mongo_generator():
+    generator = MongoDocsGenerator()
+    generator.init_all_with_cli_args()
+    for docs_batch in generator.docs_batch_generator():
+        for doc in docs_batch:
+            logger.mesg(doc)
+    # python example.py -H localhost -P 27017 -D <DBNAME> -c <COLLECTION> -i pubdate -s 2025-10-06 -x "u:stat.view>1k" -fi "title,pubdate,stat.view" -m 5 -b 1000
+
+
 if __name__ == "__main__":
     # test_mongo()
     # test_rocks()
-    filters_str = "d:pubdate<=2012-01-01;insert_at=[2024-12-01,2024-07-01];u:stat.view>1kw;index_at=[2023-01-01,None]"
-    test_filter_str_to_params(filters_str)
-    test_filters_str_to_mongo_filter(filters_str)
+    # filters_str = "d:pubdate<=2012-01-01;insert_at=[2024-12-01,2024-07-01];u:stat.view>1kw;index_at=[2023-01-01,None]"
+    # test_filter_str_to_params(filters_str)
+    # test_filters_str_to_mongo_filter(filters_str)
+    test_mongo_generator()
 
     # python example.py
