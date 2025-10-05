@@ -7,7 +7,7 @@ from tclogger import logger, logstr, get_now_str, dict_to_str
 
 from sedb import MongoOperator, MongoConfigsType
 from sedb import RocksOperator, RocksConfigsType
-from sedb import filter_str_to_params, filters_str_to_mongo_filters
+from sedb import filter_str_to_params, filters_str_to_mongo_filter
 
 
 def test_mongo():
@@ -55,10 +55,7 @@ def test_rocks():
     print("  * now:", rocks.db.key_may_exist("now"), rocks.db.get("now"))
 
 
-def test_filters_str_to_mongo_filter():
-    filters_str = (
-        "d:pubdate<=2012-01-01;insert_at=[2024-01-01,2024-12-31];u:stat.view>1kw"
-    )
+def test_filter_str_to_params(filters_str: str):
     filter_strs = filters_str.split(";")
     for filter_str in filter_strs:
         logger.note(f"* filter_str: {logstr.mesg(filter_str)}")
@@ -66,9 +63,17 @@ def test_filters_str_to_mongo_filter():
         logger.okay(dict_to_str(filter_params, add_quotes=True), indent=2)
 
 
+def test_filters_str_to_mongo_filter(filters_str: str):
+    logger.note(f"filters_str: {logstr.mesg(filters_str)}")
+    mongo_filter = filters_str_to_mongo_filter(filters_str)
+    logger.okay(dict_to_str(mongo_filter, add_quotes=True), indent=2)
+
+
 if __name__ == "__main__":
     # test_mongo()
     # test_rocks()
-    test_filters_str_to_mongo_filter()
+    filters_str = "d:pubdate<=2012-01-01;insert_at=[2024-12-01,2024-07-01];u:stat.view>1kw;index_at=[2023-01-01,None]"
+    test_filter_str_to_params(filters_str)
+    test_filters_str_to_mongo_filter(filters_str)
 
     # python example.py

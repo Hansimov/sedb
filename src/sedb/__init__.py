@@ -12,7 +12,7 @@ from .mongo_filter import range_to_mongo_filter_and_sort_info
 from .mongo_filter import (
     filter_str_to_params,
     filter_params_to_mongo_filter,
-    filters_str_to_mongo_filters,
+    filters_str_to_mongo_filter,
 )
 from .mongo_filter import (
     extract_count_params_from_cursor_params,

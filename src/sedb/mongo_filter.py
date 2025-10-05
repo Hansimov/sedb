@@ -60,9 +60,9 @@ def filter_params_to_mongo_filter(
     date_fields: list[str] = DATE_FIELDS,
     is_date_field: bool = None,
 ) -> dict:
-    """alias: `to_mongo_filter()`.
-
-    NOTE: The alias is for backward compatibility, and would be removed in future."""
+    """alias: `to_mongo_filter()`. \n
+    NOTE: The alias is for backward compatibility, and would be removed in future.
+    """
     filter_dict = {}
     if filter_index:
         if filter_op == "range":
@@ -139,8 +139,11 @@ def unify_range_value_str(
         rvs = [s.strip() for s in range_str.split(",")]
         if len(rvs) != 2:
             raise ValueError(f"× Invalid range_str: {range_str}")
+        rvs = [rv if rv.lower() != "none" else None for rv in rvs]
     elif value_str:
         rvs = value_str.strip()
+        if rvs.lower() == "none":
+            rvs = None
     else:
         raise ValueError("× Must provide either range or value!")
 
@@ -152,11 +155,14 @@ def unify_range_value_str(
     if "d" in flags:
         is_date_field = True
 
-    if isinstance(rvs, str):
+    if not isinstance(rvs, list):
         rvs = [rvs]
 
     urvs = []
     for rv in rvs:
+        if rv is None:
+            urvs.append(rv)
+            continue
         if "i" in flags:
             urvs.append(int(rv))
             continue
@@ -234,10 +240,10 @@ def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
     ```
 
     """
-
     match = re.match(RE_FILTER, filter_str.strip())
     if not match:
         return {}
+
     try:
         filter_index = match.group("field").strip()
         sym = match.group("sym").strip()
@@ -262,10 +268,16 @@ def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
     }
 
 
-def filters_str_to_mongo_filters(
-    filters_str: str, sep: str = ";"
-) -> Union[dict, list[dict]]:
-    pass
+def filters_str_to_mongo_filter(filters_str: str) -> dict:
+    if not filters_str:
+        return {}
+    res_dict = {}
+    filter_strs = filters_str.split(";")
+    for filter_str in filter_strs:
+        filter_params = filter_str_to_params(filter_str)
+        filter_dict = filter_params_to_mongo_filter(**filter_params)
+        res_dict.update(filter_dict)
+    return res_dict
 
 
 def update_mongo_filter(
