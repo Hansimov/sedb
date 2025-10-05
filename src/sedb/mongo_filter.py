@@ -1,5 +1,5 @@
 from typing import Union
-from tclogger import unify_ts_and_str, str_to_ts
+from tclogger import logger, unify_ts_and_str, str_to_ts
 
 from .mongo_types import FilterIndexType, FilterOpType, FilterRangeType, SortOrderType
 from .mongo_types import (
@@ -16,13 +16,13 @@ def range_to_mongo_filter_and_sort_info(
     end_val: Union[str, int, None] = None,
     sort_index: FilterIndexType = None,
     sort_order: SortOrderType = "asc",
-    is_date_index: bool = None,
+    is_date_field: bool = None,
 ) -> tuple[dict, dict]:
     filter_op = None
     filter_range = None
     filter_dict = {}
 
-    if is_date_index is True:
+    if is_date_field is True:
         start_val, _ = unify_ts_and_str(start_val)
         end_val, _ = unify_ts_and_str(end_val)
 
@@ -52,13 +52,16 @@ def range_to_mongo_filter_and_sort_info(
     return filter_info, sort_info
 
 
-def to_mongo_filter(
+def filter_params_to_mongo_filter(
     filter_index: FilterIndexType = None,
     filter_op: FilterOpType = "gte",
     filter_range: FilterRangeType = None,
     date_fields: list[str] = DATE_FIELDS,
-    is_date_index: bool = None,
+    is_date_field: bool = None,
 ) -> dict:
+    """alias: `to_mongo_filter()`.
+
+    NOTE: The alias is for backward compatibility, and would be removed in future."""
     filter_dict = {}
     if filter_index:
         if filter_op == "range":
@@ -68,7 +71,7 @@ def to_mongo_filter(
                 and len(filter_range) == 2
             ):
                 l_val, r_val = filter_range
-                if is_date_index is True or filter_index.lower() in date_fields:
+                if is_date_field is True or filter_index.lower() in date_fields:
                     if isinstance(l_val, str):
                         l_val = str_to_ts(l_val)
                     if isinstance(r_val, str):
@@ -99,7 +102,10 @@ def to_mongo_filter(
     return filter_dict
 
 
-def update_filter(
+to_mongo_filter = filter_params_to_mongo_filter
+
+
+def update_mongo_filter(
     filter_dict: dict, extra_filters: Union[dict, list[dict]] = None
 ) -> dict:
     if extra_filters:

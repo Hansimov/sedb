@@ -6,7 +6,7 @@ from tclogger import get_now_str, ts_to_str, str_to_ts, dict_to_str
 
 from .mongo_types import MongoConfigsType, DATE_FIELDS
 from .mongo_types import FilterOpType, FilterRangeType, FilterIndexType, SortOrderType
-from .mongo_filter import to_mongo_filter, update_filter
+from .mongo_filter import filter_params_to_mongo_filter, update_mongo_filter
 from .mongo_pipeline import to_mongo_projection
 from .message import ConnectMessager
 
@@ -122,9 +122,11 @@ class MongoOperator:
                 f"[{total_count}] {logstr.file('(estimated)')}", verbose=self.verbose
             )
         else:
-            filter_dict = to_mongo_filter(**filter_params)
+            filter_dict = filter_params_to_mongo_filter(**filter_params)
             if extra_filters:
-                filter_dict = update_filter(filter_dict, extra_filters=extra_filters)
+                filter_dict = update_mongo_filter(
+                    filter_dict, extra_filters=extra_filters
+                )
             total_count = db_collect.count_documents(filter_dict)
             logger.success(f"[{total_count}]", verbose=self.verbose)
 
@@ -142,17 +144,17 @@ class MongoOperator:
         sort_order: SortOrderType = "asc",
         skip_count: int = None,
         extra_filters: list[dict] = None,
-        is_date_index: bool = None,
+        is_date_field: bool = None,
         no_cursor_timeout: bool = False,
     ):
-        filter_dict = to_mongo_filter(
+        filter_dict = filter_params_to_mongo_filter(
             filter_index=filter_index,
             filter_op=filter_op,
             filter_range=filter_range,
-            is_date_index=is_date_index,
+            is_date_field=is_date_field,
         )
         if extra_filters:
-            filter_dict = update_filter(filter_dict, extra_filters=extra_filters)
+            filter_dict = update_mongo_filter(filter_dict, extra_filters=extra_filters)
         projection = to_mongo_projection(
             include_fields=include_fields, exclude_fields=exclude_fields
         )

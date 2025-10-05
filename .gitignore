@@ -1,3 +1,4 @@
+.vscode
 dist/
 src/*.egg-info/
 __pycache__

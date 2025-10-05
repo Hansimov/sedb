@@ -14,7 +14,7 @@ COUNT_ARG_KEYS = [
     "extra_filters",
     "estimate_count",
 ]
-FILTER_ARG_KEYS = ["filter_index", "filter_op", "filter_range", "is_date_index"]
+FILTER_ARG_KEYS = ["filter_index", "filter_op", "filter_range", "is_date_field"]
 DATE_FIELDS = ["insert_at", "pubdate", "index_at"]
 
 
@@ -34,7 +34,7 @@ class MongoCursorParamsType(TypedDict):
     sort_index: str
     sort_order: SortOrderType
     skip_count: int
-    is_date_index: bool
+    is_date_field: bool
 
 
 class MongoCountParamsType(TypedDict):
@@ -49,4 +49,4 @@ class MongoFilterParamsType(TypedDict):
     filter_index: str
     filter_op: FilterOpType
     filter_range: FilterRangeType
-    is_date_index: bool
+    is_date_field: bool

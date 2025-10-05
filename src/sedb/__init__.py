@@ -8,7 +8,12 @@ from .mongo_types import (
 from .mongo import MongoOperator, MongoConfigsType
 from .elastic import ElasticOperator, ElasticConfigsType
 from .elastic_filter import to_elastic_filter
-from .mongo_filter import range_to_mongo_filter_and_sort_info, to_mongo_filter
+from .mongo_filter import range_to_mongo_filter_and_sort_info
+from .mongo_filter import (
+    filter_str_to_params,
+    filter_params_to_mongo_filter,
+    filters_str_to_mongo_filters,
+)
 from .mongo_filter import (
     extract_count_params_from_cursor_params,
     extract_filter_params_from_cursor_params,
