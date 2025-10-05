@@ -1,3 +1,4 @@
+import re
 from typing import Union
 from tclogger import logger, unify_ts_and_str, str_to_ts
 
@@ -103,6 +104,168 @@ def filter_params_to_mongo_filter(
 
 
 to_mongo_filter = filter_params_to_mongo_filter
+
+SYM_OP_MAP = {">": "gt", "<": "lt", ">=": "gte", "<=": "lte", "=": "eq"}
+
+RE_FLAGS = r"(?P<flags>[a-zA-Z]+:)?"
+RE_FIELD = r"(?P<field>[^=><]+)"
+RE_SYM = r"(?P<sym>=|>=|<=|>|<)"
+RE_RANGE = r"(?P<range>\[[^;\]]+\])"
+RE_VALUE = r"(?P<value>[^;\[\]]+)"
+RE_FILTER = rf"{RE_FLAGS}{RE_FIELD}{RE_SYM}({RE_RANGE}|{RE_VALUE})"
+
+UNIT_NUM_MAP = {"k": 1000, "w": 10000, "m": 1000000}
+RE_UNIT_NUM = r"^(?P<num>[\d.]+)(?P<units>[kKwWmM]*)$"
+
+
+def num_unit_str_to_int(s: str) -> int:
+    match = re.match(RE_UNIT_NUM, s)
+    if not match:
+        raise ValueError(f"× Invalid number-unit string: {s}")
+    num = int(match.group("num"))
+    units = match.group("units")
+    if not units:
+        return num
+    for unit in units.lower():
+        num *= UNIT_NUM_MAP.get(unit, 1)
+    return num
+
+
+def unify_range_value_str(
+    range_str: str = None, value_str: str = None, flags: str = None
+) -> tuple:
+    if range_str:
+        range_str = range_str.strip("[]")
+        rvs = [s.strip() for s in range_str.split(",")]
+        if len(rvs) != 2:
+            raise ValueError(f"× Invalid range_str: {range_str}")
+    elif value_str:
+        rvs = value_str.strip()
+    else:
+        raise ValueError("× Must provide either range or value!")
+
+    if not flags:
+        return rvs, None
+
+    flags = flags.strip(":").lower()
+    is_date_field = None
+    if "d" in flags:
+        is_date_field = True
+
+    if isinstance(rvs, str):
+        rvs = [rvs]
+
+    urvs = []
+    for rv in rvs:
+        if "i" in flags:
+            urvs.append(int(rv))
+            continue
+        if "f" in flags:
+            urvs.append(float(rv))
+            continue
+        if "u" in flags:
+            urvs.append(num_unit_str_to_int(rv))
+            continue
+        if "s" in flags:
+            urvs.append(rv)
+            continue
+        if "b" in flags:
+            if rv.lower() in ["1", "true", "yes"]:
+                urvs.append(True)
+            elif rv.lower() in ["0", "false", "no"]:
+                urvs.append(False)
+            else:
+                raise ValueError(f"× Invalid bool value: {rv}")
+            continue
+        urvs.append(rv)
+
+    if len(urvs) == 1:
+        res_rvs = urvs[0]
+    else:
+        res_rvs = urvs
+
+    return res_rvs, is_date_field
+
+
+def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
+    """`<flags>:<field><sym><value/range>`
+
+    Flags:
+        - d: type date
+        - b: type bool
+        - i: type int
+        - f: type float
+        - u: type number-unit
+        - s: type str (default)
+
+    Examples:
+
+    * `insert_at>=2023-01-01`:
+
+    ```
+    {
+        "filter_index": "insert_at",
+        "filter_op": "gte",
+        "filter_range": "2023-01-01",
+        "is_date_field": True
+    }
+    ```
+
+    * `d:pubdate=[2023-01-01,2023-06-01]`:
+
+    ```
+    {
+        "filter_index": "pubdate",
+        "filter_op": "range",
+        "filter_range": ["2023-01-01", "2023-06-01"],
+        "is_date_field": True
+    }
+    ```
+
+    * `n:stat.view>=10k`:
+
+    ```
+    {
+        "filter_index": "stat.view",
+        "filter_op": "gte",
+        "filter_range": 10000,
+        "is_date_field": False
+    }
+    ```
+
+    """
+
+    match = re.match(RE_FILTER, filter_str.strip())
+    if not match:
+        return {}
+    try:
+        filter_index = match.group("field").strip()
+        sym = match.group("sym").strip()
+        filter_op = SYM_OP_MAP.get(sym, "gte")
+        range_str = match.group("range")
+        value_str = match.group("value")
+        if filter_op == "eq" and range_str:
+            filter_op = "range"
+        flags = match.group("flags")
+        filter_range, is_date_field = unify_range_value_str(
+            range_str=range_str, value_str=value_str, flags=flags
+        )
+    except Exception as e:
+        logger.warn(f"× Failed to parse `{filter_str}`: ({e})")
+        return {}
+
+    return {
+        "filter_index": filter_index,
+        "filter_op": filter_op,
+        "filter_range": filter_range,
+        "is_date_field": is_date_field,
+    }
+
+
+def filters_str_to_mongo_filters(
+    filters_str: str, sep: str = ";"
+) -> Union[dict, list[dict]]:
+    pass
 
 
 def update_mongo_filter(
