@@ -11,44 +11,6 @@ from sedb import filter_str_to_params, filters_str_to_mongo_filter
 from sedb import MongoDocsGenerator
 
 
-def test_mongo():
-    mongo_configs: MongoConfigsType = {
-        "host": "localhost",
-        "port": 27017,
-        "dbname": "test",
-    }
-
-    collection = "videos"
-    mongo = MongoOperator(configs=mongo_configs, indent=0)
-    cursor1 = mongo.get_cursor(
-        collection,
-        filter_index="pubdate",
-        filter_op="lte",
-        filter_range="2012-01-01",
-        sort_index="pubdate",
-        sort_order="asc",
-    )
-    print(cursor1.next())
-    cursor2 = mongo.get_cursor(
-        collection,
-        filter_index="pubdate",
-        filter_op="range",
-        filter_range=["2012-12-31", "2012-01-01"],
-        sort_index="pubdate",
-        sort_order="asc",
-    )
-    print(cursor2.next())
-    cursor3 = mongo.get_cursor(
-        collection,
-        filter_index="pubdate",
-        filter_op="range",
-        filter_range=["2012-01-01", None],
-        sort_index="pubdate",
-        sort_order="asc",
-    )
-    print(cursor3.next())
-
-
 def test_rocks():
     rocks_configs: RocksConfigsType = {"db_path": "z.rkdb"}
     rocks = RocksOperator(configs=rocks_configs)
@@ -80,7 +42,6 @@ def test_mongo_generator():
 
 
 if __name__ == "__main__":
-    # test_mongo()
     # test_rocks()
     # filters_str = "d:pubdate<=2012-01-01;insert_at=[2024-12-01,2024-07-01];u:stat.view>1kw;index_at=[2023-01-01,None]"
     # test_filter_str_to_params(filters_str)
