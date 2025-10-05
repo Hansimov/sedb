@@ -2,6 +2,7 @@ from .mongo_types import FilterIndexType, FilterOpType, FilterRangeType, SortOrd
 from .mongo_types import (
     MongoConfigsType,
     MongoCursorParamsType,
+    MongoExtendParamsType,
     MongoCountParamsType,
     MongoFilterParamsType,
 )
@@ -20,6 +21,7 @@ from .mongo_filter import (
 )
 from .mongo_pipeline import to_mongo_projection, to_mongo_pipeline
 from .mongo_generator import MongoDocsGenerator, MongoDocsGeneratorArgParser
+from .mongo_generator import mongo_args_to_params
 from .rocks import RocksOperator, RocksConfigsType
 from .milvus import MilvusOperator, MilvusConfigsType
 from .qdrant import QdrantOperator, QdrantConfigsType

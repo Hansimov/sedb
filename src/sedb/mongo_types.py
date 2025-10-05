@@ -34,7 +34,15 @@ class MongoCursorParamsType(TypedDict):
     sort_index: str
     sort_order: SortOrderType
     skip_count: int
+    extra_filters: Union[dict, list[dict]]
     is_date_field: bool
+    no_cursor_timeout: bool
+
+
+class MongoExtendParamsType(MongoCursorParamsType):
+    max_count: int
+    estimate_count: bool
+    batch_size: int
 
 
 class MongoCountParamsType(TypedDict):
