@@ -25,6 +25,7 @@ class MongoDocsGenerator:
     - `init_progress_bar`
 
     One-step initialization:
+    - `init_cli_args`
     - `init_all_with_cli_args`
     """
 
@@ -104,33 +105,59 @@ class MongoDocsGenerator:
             self.doc_bar.set_count(skip_count)
         self.doc_bar.update(flush=True)
 
-    def init_all_with_cli_args(self):
-        """One-step initialization with CLI args. \n"""
+    def init_cli_args(self, ikvs: dict = None, jkvs: dict = None):
+        """Must call this before using `self.args`. \n
+        Modularizing this is to allow user to pass extra args via function.\n
+        Priority: `ikvs` < CLI args < `jkvs`."""
         arg_parser = MongoDocsGeneratorArgParser()
-        args = arg_parser.args
-        mongo_configs = cli_args_to_mongo_configs(args)
-        self.init_mongo(configs=mongo_configs)
-        extend_params = cli_args_to_mongo_extend_params(args)
-        self.init_mongo_cursor(**extend_params)
-        self.init_mongo_count()
-        self.init_progress_bar()
+        self.args: argparse.Namespace = arg_parser.args
+        if ikvs:
+            for k, v in ikvs.items():
+                if getattr(self.args, k) is None:
+                    setattr(self.args, k, v)
+        if jkvs:
+            for k, v in jkvs.items():
+                setattr(self.args, k, v)
+
+    def init_all_with_cli_args(
+        self,
+        set_mongo: bool = True,
+        set_cursor: bool = True,
+        set_count: bool = True,
+        set_bar: bool = True,
+    ):
+        """Must call `init_cli_args()` before using this."""
+        if set_mongo:
+            mongo_configs = cli_args_to_mongo_configs(self.args)
+            self.init_mongo(configs=mongo_configs)
+        if set_cursor:
+            extend_params = cli_args_to_mongo_extend_params(self.args)
+            self.init_mongo_cursor(**extend_params)
+        if set_count:
+            self.init_mongo_count()
+        if set_bar:
+            self.init_progress_bar()
 
     def check_before_generate(self) -> bool:
         if not hasattr(self, "cursor") or self.cursor is None:
-            logger.warn(f"× `self.cursor` not initialized: try `init_mongo_cursor()`")
+            func_str = logstr.mesg("init_mongo_cursor()")
+            logger.err(f"× `self.cursor` not initialized: try `{func_str}`")
             return False
         if not hasattr(self, "total_count") or self.total_count is None:
-            logger.warn(f"× `self.total_count` not set: try `init_mongo_count()`")
-            return False
+            func_str = logstr.mesg("init_mongo_count()")
+            logger.warn(f"* `self.total_count` not set: try `{func_str}`")
+            self.total_count = None
+            # does not matter, just warn and set to None
         if self.total_count == 0:
-            logger.warn(f"× No doc to generate")
+            logger.err(f"× No doc to generate")
             return False
         if not hasattr(self, "doc_bar") or self.doc_bar is None:
-            logger.warn(f"× `self.doc_bar` not initialized: try `init_progress_bar()`")
+            func_str = logstr.mesg("init_progress_bar()")
+            logger.warn(f"* `self.doc_bar` not initialized: try `{func_str}`")
             self.doc_bar = None
             # does not matter, just warn and set to None
         if not hasattr(self, "max_count"):
-            logger.warn(f"× `self.max_count` not set: use None")
+            logger.err(f"* `self.max_count` not set: use None")
             self.max_count = None
             # does not matter, just warn and set to None
         return True
@@ -140,7 +167,20 @@ class MongoDocsGenerator:
             return True
         return False
 
-    def update_progress(self, docs_batch: list[dict]):
+    def doc_generator(self) -> Generator[dict, None, None]:
+        """Before using this, must call: \n
+        - `init_mongo`, `init_mongo_cursor()`, `init_mongo_count()`, `init_progress_bar()`
+        """
+        if not self.check_before_generate():
+            return
+        for idx, doc in enumerate(self.cursor):
+            if self.is_exceed_max_count(idx):
+                break
+            yield doc
+            if self.doc_bar:
+                self.doc_bar.update(1)
+
+    def update_progress_by_batch(self, docs_batch: list[dict]):
         if not self.doc_bar:
             return
         self.doc_bar.update(len(docs_batch), flush=True)
@@ -158,11 +198,11 @@ class MongoDocsGenerator:
             docs_batch.append(doc)
             if len(docs_batch) >= self.batch_size:
                 yield docs_batch
-                self.update_progress(docs_batch)
+                self.update_progress_by_batch(docs_batch)
                 docs_batch = []
         if docs_batch:
             yield docs_batch
-            self.update_progress(docs_batch)
+            self.update_progress_by_batch(docs_batch)
             docs_batch = []
 
 
