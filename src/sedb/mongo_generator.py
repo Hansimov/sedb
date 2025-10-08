@@ -214,27 +214,27 @@ class MongoDocsGeneratorArgParser(argparse.ArgumentParser):
         self.add_argument("-P", "--port", type=int, default=27017)
         self.add_argument("-D", "--dbname", type=str)
         # cursor args: collection
-        self.add_argument("-c", "--mongo-collection", type=str)
+        self.add_argument("-mc", "--mongo-collection", type=str)
         # cursor args: filters
-        self.add_argument("-i", "--filter-index", type=str, default=None)
-        self.add_argument("-o", "--sort-order", type=str, default=None)
-        self.add_argument("-s", "--range-start", type=str, default=None)
-        self.add_argument("-e", "--range-end", type=str, default=None)
-        self.add_argument("-k", "--skip-count", type=int, default=None)
-        self.add_argument("-x", "--extra-filters", type=str, default=None)
-        self.add_argument("-n", "--no-filter", action="store_true", default=False)
+        self.add_argument("-fi", "--filter-index", type=str, default=None)
+        self.add_argument("-so", "--sort-order", type=str, default=None)
+        self.add_argument("-rs", "--range-start", type=str, default=None)
+        self.add_argument("-re", "--range-end", type=str, default=None)
+        self.add_argument("-sc", "--skip-count", type=int, default=None)
+        self.add_argument("-xf", "--extra-filters", type=str, default=None)
+        self.add_argument("-nf", "--no-filter", action="store_true", default=False)
         # cursor args: in/ex-clude fields
-        self.add_argument("-fi", "--include-fields", type=str, default=None)
-        self.add_argument("-fe", "--exclude-fields", type=str, default=None)
+        self.add_argument("-if", "--include-fields", type=str, default=None)
+        self.add_argument("-ef", "--exclude-fields", type=str, default=None)
         # cursor args: max-count
-        self.add_argument("-m", "--max-count", type=int, default=None)
+        self.add_argument("-mn", "--max-count", type=int, default=None)
         # count args: estimate
-        self.add_argument("-t", "--estimate-count", action="store_true", default=False)
+        self.add_argument("-ec", "--estimate-count", action="store_true", default=False)
         # batch args: batch-size
-        self.add_argument("-b", "--batch-size", type=int, default=10000)
+        self.add_argument("-bs", "--batch-size", type=int, default=10000)
         # run args: dry-run
-        self.add_argument("-u", "--dry-run", action="store_true", default=False)
-        self.args = self.parse_args()
+        self.add_argument("-dr", "--dry-run", action="store_true", default=False)
+        self.args, _ = self.parse_known_args()
 
 
 def cli_args_to_mongo_configs(args: argparse.Namespace) -> MongoConfigsType:
