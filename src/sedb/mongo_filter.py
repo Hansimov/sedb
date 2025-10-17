@@ -60,9 +60,6 @@ def filter_params_to_mongo_filter(
     date_fields: list[str] = DATE_FIELDS,
     is_date_field: bool = None,
 ) -> dict:
-    """alias: `to_mongo_filter()`. \n
-    NOTE: The alias is for backward compatibility, and would be removed in future.
-    """
     filter_dict = {}
     if filter_index:
         if filter_op == "range":
@@ -102,8 +99,6 @@ def filter_params_to_mongo_filter(
             raise ValueError(f"× Invalid filter_op: {filter_op}")
     return filter_dict
 
-
-to_mongo_filter = filter_params_to_mongo_filter
 
 SYM_OP_MAP = {">": "gt", "<": "lt", ">=": "gte", "<=": "lte", "=": "eq"}
 
@@ -201,7 +196,7 @@ def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
         - b: type bool
         - i: type int
         - f: type float
-        - u: type number-unit
+        - u: type int-unit
         - s: type str (default)
 
     Examples:
@@ -228,7 +223,7 @@ def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
     }
     ```
 
-    * `n:stat.view>=10k`:
+    * `u:stat.view>=10k`:
 
     ```
     {
@@ -268,11 +263,11 @@ def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
     }
 
 
-def filters_str_to_mongo_filter(filters_str: str) -> dict:
+def filters_str_to_mongo_filter(filters_str: str, sep: str = ";") -> dict:
     if not filters_str:
         return {}
     res_dict = {}
-    filter_strs = filters_str.split(";")
+    filter_strs = filters_str.split(sep)
     for filter_str in filter_strs:
         filter_params = filter_str_to_params(filter_str)
         filter_dict = filter_params_to_mongo_filter(**filter_params)
