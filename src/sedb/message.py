@@ -17,9 +17,9 @@ class ConnectMessager:
         - msg: direct message to log
         - src_msg: source message (e.g., class name)
         - dst_msg: destination  message (e.g., database name)
-        - cls: class of instance using MongoOperator
-        - opr: database operator object (e.g., MongoOperator, ElasticOperator)
-        - dbt: database type (e.g., "mongo", "elastic")
+        - cls: class of instance using MongoOperator/ElasticOperator/RedisOperator
+        - opr: database operator object (e.g., MongoOperator, ElasticOperator, RedisOperator)
+        - dbt: database type (e.g., "mongo", "elastic", "redis")
         """
         self.msg = msg
         self.src_msg = src_msg

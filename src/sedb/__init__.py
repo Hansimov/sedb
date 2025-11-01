@@ -22,6 +22,7 @@ from .mongo_filter import (
 from .mongo_pipeline import to_mongo_projection, to_mongo_pipeline
 from .mongo_generator import MongoDocsGenerator, MongoDocsGeneratorArgParser
 from .mongo_generator import cli_args_to_mongo_configs, cli_args_to_mongo_extend_params
+from .redis import RedisOperator, RedisConfigsType
 from .rocks import RocksOperator, RocksConfigsType
 from .milvus import MilvusOperator, MilvusConfigsType
 from .qdrant import QdrantOperator, QdrantConfigsType
