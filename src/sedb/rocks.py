@@ -1,8 +1,14 @@
-from rocksdict import Rdict, Options, WriteOptions
+import threading
 
+from rocksdict import Rdict, Options, WriteOptions, WriteBatch
 from pathlib import Path
-from tclogger import logger, logstr, get_now_str, brk
-from typing import TypedDict, Union
+from tclogger import FileLogger, TCLogger, brk
+from tclogger import PathType, norm_path
+from typing import TypedDict, Union, Any
+
+from .message import ConnectMessager
+
+logger = TCLogger()
 
 
 class RocksConfigsType(TypedDict):
@@ -32,19 +38,35 @@ class RocksOperator:
         configs: RocksConfigsType,
         connect_at_init: bool = True,
         connect_msg: str = None,
+        connect_cls: type = None,
+        lock: threading.Lock = None,
+        log_path: PathType = None,
+        verbose: bool = True,
         indent: int = 0,
         raw_mode: bool = False,
-        verbose: bool = True,
     ):
         self.configs = configs
         self.connect_at_init = connect_at_init
         self.connect_msg = connect_msg
+        self.verbose = verbose
         self.indent = indent
         self.raw_mode = raw_mode
-        self.verbose = verbose
         self.init_configs()
+        self.msgr = ConnectMessager(
+            msg=connect_msg,
+            cls=connect_cls,
+            opr=self,
+            dbt="rocks",
+            verbose=verbose,
+            indent=indent,
+        )
+        self.lock = lock or threading.Lock()
+        if log_path:
+            self.file_logger = FileLogger(log_path)
+        else:
+            self.file_logger = None
         if self.connect_at_init:
-            self.connect(connect_msg=connect_msg)
+            self.connect()
 
     def init_configs(self):
         # init db_path
@@ -74,15 +96,12 @@ class RocksOperator:
         write_options = WriteOptions()
         write_options.no_slowdown = True
         self.write_options = write_options
+        self.endpoint = norm_path(self.db_path)
 
-    def connect(self, connect_msg: str = None):
-        db_str = logstr.mesg(brk(self.db_path))
-        if self.verbose:
-            logger.note(f"> Connecting to: {db_str}")
-            logger.file(f"  * {get_now_str()}")
-            connect_msg = connect_msg or self.connect_msg
-            if connect_msg:
-                logger.file(f"  * {connect_msg}")
+    def connect(self):
+        self.msgr.log_endpoint()
+        self.msgr.log_now()
+        self.msgr.log_msg()
         try:
             if not Path(self.db_path).exists():
                 status = "Created"
@@ -93,7 +112,7 @@ class RocksOperator:
             if self.verbose:
                 count = self.get_total_count()
                 count_str = f"{count} keys"
-                logger.okay(f"  + RocksDB: {brk(status)} {brk(count_str)}", self.indent)
+                logger.okay(f"  * RocksDB: {brk(status)} {brk(count_str)}", self.indent)
         except Exception as e:
             raise e
 
@@ -102,17 +121,37 @@ class RocksOperator:
         - https://github.com/facebook/rocksdb/blob/10.4.fb/include/rocksdb/db.h#L1445"""
         return self.db.property_int_value("rocksdb.estimate-num-keys")
 
+    def get(self, key: Union[str, bytes]) -> Any:
+        return self.db.get(key)
+
+    def set(self, key: Union[str, bytes], value: Any):
+        self.db.put(key, value)
+
+    def mset(self, d: Union[dict, list[tuple]]):
+        """Set multiple key-value pairs at once with WriteBatch"""
+        wb = WriteBatch(raw_mode=self.raw_mode)
+        if isinstance(d, dict):
+            for key, value in d.items():
+                wb.put(key, value)
+        elif isinstance(d, list):
+            for item in d:
+                key, value = item
+                wb.put(key, value)
+        else:
+            raise ValueError("Input must be dict or list of (key, value) tuples")
+        self.db.write(wb)
+
     def flush(self):
         self.db.flush()
-        status = "Flushed"
-        if self.verbose:
-            logger.file(f"  * RocksDB: {brk(status)}", self.indent)
+        # if self.verbose:
+        #     status = "Flushed"
+        #     logger.file(f"  * RocksDB: {brk(status)}", self.indent)
 
     def close(self):
         self.db.close()
-        status = "Closed"
-        if self.verbose:
-            logger.warn(f"  - RocksDB: {brk(status)}", self.indent)
+        # if self.verbose:
+        #     status = "Closed"
+        #     logger.warn(f"  - RocksDB: {brk(status)}", self.indent)
 
     def __del__(self):
         try:
