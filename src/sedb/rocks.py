@@ -124,6 +124,10 @@ class RocksOperator:
     def get(self, key: Union[str, bytes]) -> Any:
         return self.db.get(key)
 
+    def mget(self, keys: list[Union[str, bytes]]) -> list[Any]:
+        """Separate this method only for readability, as `Rdict.get()` support list input natively"""
+        return self.db.get(keys)
+
     def set(self, key: Union[str, bytes], value: Any):
         self.db.put(key, value)
 
