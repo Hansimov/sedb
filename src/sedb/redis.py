@@ -3,7 +3,7 @@ import threading
 
 from copy import deepcopy
 from tclogger import TCLogger, FileLogger, PathType
-from typing import TypedDict
+from typing import TypedDict, Union
 
 from .message import ConnectMessager
 
@@ -91,3 +91,57 @@ class RedisOperator:
             self.msgr.log_dbname()
         except Exception as e:
             raise e
+
+    def key_hash(
+        self, key: str, is_hash: bool = True, sep: str = ":"
+    ) -> tuple[str, Union[str, None]]:
+        """Convert key to hash_name and hash_field"""
+        if not key or not is_hash:
+            return key, None
+        if sep in key:
+            hash_name, hash_field = key.split(sep, 1)
+            return hash_name, hash_field
+        else:
+            return key, None
+
+    def is_key_exist(self, key: str, is_hash: bool = False) -> bool:
+        if not key:
+            return None
+        hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
+        if hash_field is None:
+            return bool(self.client.exists(key))
+        else:
+            return bool(self.client.hexists(hash_name, hash_field))
+
+    def is_keys_exist(self, keys: list[str], is_hash: bool = False) -> list[bool]:
+        if not keys:
+            return []
+        pipeline = self.client.pipeline()
+        for key in keys:
+            hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
+            if hash_field is None:
+                pipeline.exists(hash_name)
+            else:
+                pipeline.hexists(hash_name, hash_field)
+        results = pipeline.execute()
+        return [bool(result) for result in results]
+
+    def set_key_exist(self, key: str, is_hash: bool = False):
+        if not key:
+            return
+        hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
+        if hash_field is None:
+            self.client.set(hash_name, 1)
+        else:
+            self.client.hset(hash_name, hash_field, 1)
+
+    def set_keys_exist(self, keys: list[str], is_hash: bool = False):
+        if not keys:
+            return
+        pipeline = self.client.pipeline()
+        for key in keys:
+            hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
+            pipeline.set(hash_name, 1)
+            if hash_field is not None:
+                pipeline.hset(hash_name, hash_field, 1)
+        pipeline.execute()
