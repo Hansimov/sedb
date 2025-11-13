@@ -23,12 +23,14 @@ class MongoOperator:
         lock: threading.Lock = None,
         log_path: PathType = None,
         verbose: bool = True,
+        verbose_args: bool = True,
         indent: int = 0,
     ):
         self.configs = configs
         self.connect_at_init = connect_at_init
         self.connect_msg = connect_msg
         self.verbose = verbose
+        self.verbose_args = verbose_args
         self.indent = indent
         self.init_configs()
         self.date_fields = DATE_FIELDS
@@ -158,7 +160,7 @@ class MongoOperator:
         projection = to_mongo_projection(
             include_fields=include_fields, exclude_fields=exclude_fields
         )
-        if self.verbose:
+        if self.verbose_args:
             args_dict = {
                 "collection": collection,
                 "filter_index": filter_index,

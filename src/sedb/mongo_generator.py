@@ -29,15 +29,19 @@ class MongoDocsGenerator:
     - `init_all_with_cli_args`
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, verbose_mongo_args: bool = False):
+        self.verbose_mongo_args = verbose_mongo_args
 
     def init_mongo(self, configs: MongoConfigsType):
         """Must calls this before using `self.mongo`. \n
         Use `cli_args_to_mongo_configs()` to pass params from CLI args.
         """
         self.configs = configs
-        self.mongo = MongoOperator(configs=self.configs, connect_cls=self.__class__)
+        self.mongo = MongoOperator(
+            configs=self.configs,
+            connect_cls=self.__class__,
+            verbose_args=self.verbose_mongo_args,
+        )
 
     def init_mongo_cursor(
         self,
