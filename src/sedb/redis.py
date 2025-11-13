@@ -92,7 +92,7 @@ class RedisOperator:
         except Exception as e:
             raise e
 
-    def key_hash(
+    def key_to_name_field(
         self, key: str, is_hash: bool = True, sep: str = ":"
     ) -> tuple[str, Union[str, None]]:
         """Convert key to hash_name and hash_field"""
@@ -104,44 +104,56 @@ class RedisOperator:
         else:
             return key, None
 
-    def is_key_exist(self, key: str, is_hash: bool = False) -> bool:
+    def is_key_exist(self, key: str) -> bool:
         if not key:
-            return None
-        hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
-        if hash_field is None:
-            return bool(self.client.exists(key))
-        else:
-            return bool(self.client.hexists(hash_name, hash_field))
+            return False
+        return bool(self.client.exists(key))
 
-    def is_keys_exist(self, keys: list[str], is_hash: bool = False) -> list[bool]:
+    def is_hash_exist(self, name_field: tuple[str, str]) -> bool:
+        if not name_field:
+            return False
+        return bool(self.client.hexists(name_field[0], name_field[1]))
+
+    def is_keys_exist(self, keys: list[str]) -> list[bool]:
         if not keys:
             return []
         pipeline = self.client.pipeline()
         for key in keys:
-            hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
-            if hash_field is None:
-                pipeline.exists(hash_name)
-            else:
-                pipeline.hexists(hash_name, hash_field)
+            pipeline.exists(key)
         results = pipeline.execute()
         return [bool(result) for result in results]
 
-    def set_key_exist(self, key: str, is_hash: bool = False):
+    def is_hashes_exist(self, name_fields: list[tuple[str, str]]) -> list[bool]:
+        if not name_fields:
+            return []
+        pipeline = self.client.pipeline()
+        for name, field in name_fields:
+            pipeline.hexists(name, field)
+        results = pipeline.execute()
+        return [bool(result) for result in results]
+
+    def set_key_exist(self, key: str):
         if not key:
             return
-        hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
-        if hash_field is None:
-            self.client.set(hash_name, 1)
-        else:
-            self.client.hset(hash_name, hash_field, 1)
+        self.client.set(key, 1)
 
-    def set_keys_exist(self, keys: list[str], is_hash: bool = False):
+    def set_hash_exist(self, name_field: tuple[str, str]):
+        if not name_field:
+            return
+        self.client.hset(name_field[0], name_field[1], 1)
+
+    def set_keys_exist(self, keys: list[str]):
         if not keys:
             return
         pipeline = self.client.pipeline()
         for key in keys:
-            hash_name, hash_field = self.key_hash(key, is_hash=is_hash)
-            pipeline.set(hash_name, 1)
-            if hash_field is not None:
-                pipeline.hset(hash_name, hash_field, 1)
+            pipeline.set(key, 1)
+        pipeline.execute()
+
+    def set_hashes_exist(self, name_fields: list[tuple[str, str]]):
+        if not name_fields:
+            return
+        pipeline = self.client.pipeline()
+        for name, field in name_fields:
+            pipeline.hset(name, field, 1)
         pipeline.execute()
