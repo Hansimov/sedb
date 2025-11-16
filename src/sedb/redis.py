@@ -157,3 +157,33 @@ class RedisOperator:
         for name, field in name_fields:
             pipeline.hset(name, field, 1)
         pipeline.execute()
+
+    def get_exist_keys(self, keys: list[str]) -> list[str]:
+        results = self.is_keys_exist(keys)
+        exist_keys = [key for key, is_exist in zip(keys, results) if is_exist]
+        return exist_keys
+
+    def get_exist_hashes(
+        self, name_fields: list[tuple[str, str]]
+    ) -> list[tuple[str, str]]:
+        results = self.is_hashes_exist(name_fields)
+        exist_name_fields = [
+            name_field for name_field, is_exist in zip(name_fields, results) if is_exist
+        ]
+        return exist_name_fields
+
+    def get_non_exist_keys(self, keys: list[str]) -> list[str]:
+        results = self.is_keys_exist(keys)
+        non_exist_keys = [key for key, is_exist in zip(keys, results) if not is_exist]
+        return non_exist_keys
+
+    def get_non_exist_hashes(
+        self, name_fields: list[tuple[str, str]]
+    ) -> list[tuple[str, str]]:
+        results = self.is_hashes_exist(name_fields)
+        non_exist_name_fields = [
+            name_field
+            for name_field, is_exist in zip(name_fields, results)
+            if not is_exist
+        ]
+        return non_exist_name_fields
