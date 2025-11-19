@@ -187,3 +187,25 @@ class RedisOperator:
             if not is_exist
         ]
         return non_exist_name_fields
+
+    def get_keys_count(self, prefix: str = None, pattern: str = None) -> int:
+        """Priority: prefix > pattern; if both None, return keys count of whole DB"""
+        if prefix:
+            match_pattern = f"{prefix}*"
+        elif pattern:
+            match_pattern = pattern
+        else:
+            return self.client.dbsize()
+        lua_script = """
+        local count = 0
+        local cursor = "0"
+        local match = ARGV[1]
+        local batch_size = 1000
+        repeat
+            local result = redis.call("SCAN", cursor, "MATCH", match, "COUNT", batch_size)
+            cursor = result[1]
+            count = count + #result[2]
+        until cursor == "0"
+        return count
+        """
+        return self.client.eval(lua_script, 0, match_pattern)
