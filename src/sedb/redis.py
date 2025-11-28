@@ -2,8 +2,8 @@ import redis
 import threading
 
 from copy import deepcopy
-from tclogger import TCLogger, FileLogger, PathType
-from typing import TypedDict, Union
+from tclogger import TCLogger, TCLogbar, logstr, brk, FileLogger, PathType
+from typing import TypedDict, Union, Generator
 
 from .message import ConnectMessager
 
@@ -209,3 +209,42 @@ class RedisOperator:
         return count
         """
         return self.client.eval(lua_script, 0, match_pattern)
+
+    def scan_keys(
+        self, prefix: str = None, pattern: str = None, max_count: int = None
+    ) -> Generator[list[str], None, None]:
+        """Priority: prefix > pattern; if both None, return all keys of whole DB"""
+        if prefix:
+            match_pattern = f"{prefix}*"
+        elif pattern:
+            match_pattern = pattern
+        else:
+            match_pattern = None
+        all_count = self.get_keys_count(prefix=prefix, pattern=pattern)
+        total_count = max_count or all_count
+        logger.note(f"> Scan redis keys: {logstr.file(brk(total_count))}")
+        bar = TCLogbar(total=total_count, desc="* ")
+        batch_keys = []
+        scanned_count = 0
+        cursor = 0
+        while True:
+            cursor, batch_keys = self.client.scan(
+                cursor=cursor, match=match_pattern, count=1000
+            )
+            if batch_keys:
+                scanned_count += len(batch_keys)
+                if scanned_count > total_count:
+                    remain_count = total_count - (scanned_count - len(batch_keys))
+                    batch_keys = batch_keys[:remain_count]
+                batch_keys = [
+                    key.decode("utf-8") if isinstance(key, bytes) else key
+                    for key in batch_keys
+                ]
+                bar.update(len(batch_keys), desc=f"  * {batch_keys[0]}")
+                yield batch_keys
+                batch_keys = []
+            if cursor == 0:
+                break
+            if scanned_count >= total_count:
+                break
+        print()
