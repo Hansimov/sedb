@@ -4,33 +4,59 @@ import pickle
 
 from tclogger import PathType, TCLogger
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import Optional, TypedDict, Union
 
 logger = TCLogger()
 
 
 class FaissConfigsType(TypedDict):
     db_path: str
-    dim: int
+    dim: Optional[int]
     M: Optional[int]
     efConstruction: Optional[int]
     efSearch: Optional[int]
+
+
+EmbType = Union[list[float], np.ndarray]
+EidType = Union[str, int]
+SimType = Union[float, int]
+
+
+def norm_embs(embs: np.ndarray) -> np.ndarray:
+    """Normalize embeddings for cosine similarity."""
+    embs = np.array(embs, dtype=np.float32)
+    if embs.ndim == 1:
+        embs = embs.reshape(1, -1)
+    faiss.normalize_L2(embs)
+    return embs
 
 
 class FaissOperator:
     def __init__(
         self,
         db_path: PathType,
-        dim: int,
+        dim: int = None,
         M: int = 32,
         efConstruction: int = 40,
         efSearch: int = 64,
     ):
         """
-        - `dim`: embedding dimension
-        - `M`: num of connections per layer (32 is good for 10M scale)
-        - `efConstruction`: search depth during construction (higher = better quality but slower)
-        - `efSearch`: search depth during query (higher = better recall but slower)
+        Params:
+        - `db_path`: faiss index file path
+
+        `init_db()` requires:
+            - `dim`: embedding dimension
+            - `M`: num of connections per layer
+                * 32 is good for 10M scale
+            - `efConstruction`: search depth during construction
+                * higher = better quality but slower
+            - `efSearch`: search depth during query
+                * higher = better recall but slower
+
+        Vars:
+        - `iid`: internal id, used by faiss, must be int
+        - `eid`: external id, used by user, can be str or int
+        - `nid`: next iid to assign, used in `add_embs()`
         """
         self.db_path = Path(db_path)
         self.map_path = Path(str(self.db_path) + ".map.pkl")
@@ -38,60 +64,176 @@ class FaissOperator:
         self.M = M
         self.efConstruction = efConstruction
         self.efSearch = efSearch
-        self.bvid_to_id: dict[str, int] = {}
-        self.id_to_bvid: dict[int, str] = {}
-        self.next_id: int = 0
-        self.init_db()
+        self.eid_to_iid: dict[str, int] = {}
+        self.iid_to_eid: dict[int, str] = {}
+        self.nid: int = 0
+        self.db: faiss.IndexIDMap = None
 
-    def init_db(self):
-        logger.note(f"> Init Faiss HNSW index with IDMap ...")
-        hnsw_index = faiss.IndexHNSWFlat(self.dim, self.M)
-        hnsw_index.hnsw.efConstruction = self.efConstruction
-        self.db = faiss.IndexIDMap(hnsw_index)
-        logger.okay(
+    def _log_params(self):
+        logger.mesg(
             f"  * dim={self.dim}, M={self.M}, "
             f"efConstruction={self.efConstruction}, efSearch={self.efSearch}"
         )
 
-    def set_search_params(self):
-        hnsw_index = faiss.downcast_index(self.db.index)
+    def _log_db_info(self):
+        logger.mesg(f"  * db_path: {self.db_path}")
+        logger.mesg(f"  * {self.total_count()} rows")
+
+    def init_db(self):
+        """Create new faiss index"""
+        if self.dim is None:
+            raise ValueError("'dim' must be provided for init_db")
+        logger.note(f"> Init Faiss HNSW index with IDMap ...")
+        # IndexHNSWFlat: HNSW graph + flat storage, supports reconstruct()
+        # METRIC_INNER_PRODUCT: inner product on normalized vectors = cosine similarity
+        hnsw_index = faiss.IndexHNSWFlat(self.dim, self.M, faiss.METRIC_INNER_PRODUCT)
+        hnsw_index.hnsw.efConstruction = self.efConstruction
         hnsw_index.hnsw.efSearch = self.efSearch
+        # IndexIDMap: wrapper that allows custom int64 IDs
+        self.db = faiss.IndexIDMap(hnsw_index)
+        self._log_params()
 
-    def add_embeddings(self, bvids: list[str], embeddings: np.ndarray):
-        ids = []
-        for bvid in bvids:
-            if bvid not in self.bvid_to_id:
-                self.bvid_to_id[bvid] = self.next_id
-                self.id_to_bvid[self.next_id] = bvid
-                ids.append(self.next_id)
-                self.next_id += 1
-            else:
-                ids.append(self.bvid_to_id[bvid])
-        ids_array = np.array(ids, dtype=np.int64)
-        self.db.add_with_ids(embeddings, ids_array)
+    def _load_params(self):
+        """Load index params from loaded index"""
+        hnsw_index = faiss.downcast_index(self.db.index)
+        self.dim = hnsw_index.d
+        self.M = hnsw_index.hnsw.M
+        self.efConstruction = hnsw_index.hnsw.efConstruction
+        self.efSearch = hnsw_index.hnsw.efSearch
+        self._log_params()
 
-    def save_index(self):
+    def _load_mappings(self):
+        """Load iid-eid mappings"""
+        if not self.map_path.exists():
+            logger.warn(f"× Mappings file not found: {self.map_path}")
+            return
+        logger.note(f"> Load iid-eid mappings:")
+        with open(self.map_path, "rb") as f:
+            self.iid_to_eid = pickle.load(f)
+        self.eid_to_iid = {eid: idx for idx, eid in self.iid_to_eid.items()}
+        self.nid = max(self.iid_to_eid.keys()) + 1 if self.iid_to_eid else 0
+        logger.okay(f"  * {self.map_path}")
+        logger.mesg(f"  * {len(self.iid_to_eid)} mappings")
+
+    def load_db(self):
+        """Load existed faiss index"""
+        if not self.db_path.exists():
+            raise FileNotFoundError(f"Index file not found: {self.db_path}")
+        logger.note(f"> Load Faiss index:")
+        self.db = faiss.read_index(str(self.db_path))
+        self._log_db_info()
+        self._load_params()
+        self._load_mappings()
+
+    def add_embs(self, eids: list[str], embs: np.ndarray):
+        """Add embeddings to index. Skip existed eids, as index update is not allowed in hnsw."""
+        new_iids = []
+        new_embs_idx = []
+        for i, eid in enumerate(eids):
+            if eid in self.eid_to_iid:
+                continue
+            self.eid_to_iid[eid] = self.nid
+            self.iid_to_eid[self.nid] = eid
+            new_iids.append(self.nid)
+            new_embs_idx.append(i)
+            self.nid += 1
+        if new_iids:
+            new_iids_arr = np.array(new_iids, dtype=np.int64)
+            new_embs = embs[new_embs_idx]
+            new_embs_arr = norm_embs(new_embs)
+            self.db.add_with_ids(new_embs_arr, new_iids_arr)
+
+    def _save_index(self):
         if self.db is None:
             logger.warn("× No index to save")
             return
-        self.set_search_params()
-        logger.note(f"> Save Faiss index:")
+        logger.note(f"> Save index:")
         faiss.write_index(self.db, str(self.db_path))
-        logger.okay(f"  * {self.db_path}")
-        logger.mesg(f"  * {self.total_count()} rows")
+        self._log_db_info()
 
-    def save_mapping(self):
-        logger.note(f"> Save id-bvid mappings:")
+    def _save_mappings(self):
+        logger.note(f"> Save iid-eid mappings:")
         with open(self.map_path, "wb") as f:
-            pickle.dump(self.id_to_bvid, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.iid_to_eid, f, protocol=pickle.HIGHEST_PROTOCOL)
         logger.okay(f"  * {self.map_path}")
-        logger.mesg(f"  * {len(self.id_to_bvid)} mappings")
+        logger.mesg(f"  * {len(self.iid_to_eid)} mappings")
 
     def save(self):
-        self.save_index()
-        self.save_mapping()
+        self._save_index()
+        self._save_mappings()
 
     def total_count(self) -> int:
         if self.db is None:
             return 0
         return self.db.ntotal
+
+    def get_emb_by_eid(self, eid: EidType) -> Optional[np.ndarray]:
+        """Get embedding by eid"""
+        if eid not in self.eid_to_iid:
+            return None
+        iid = self.eid_to_iid[eid]
+        hnsw_index = faiss.downcast_index(self.db.index)
+        emb = hnsw_index.reconstruct(iid)
+        return emb
+
+    def _set_search_params(self, efSearch: int = None):
+        """Must call this before using `top()`"""
+        self.efSearch = efSearch or self.efSearch
+        hnsw_index = faiss.downcast_index(self.db.index)
+        hnsw_index.hnsw.efSearch = self.efSearch
+
+    def top(
+        self,
+        emb: EmbType = None,
+        eid: EidType = None,
+        topk: int = 10,
+        efSearch: int = None,
+        return_emb: bool = False,
+    ) -> list[tuple[EidType, Optional[EmbType], SimType]]:
+        """
+        Search for the top-k most similar items using cosine similarity.
+
+        Input:
+        - `emb`: Query embedding vector (will be normalized)
+        - `eid`: Query by exsited eid (eid) in the database
+        - `efSearch`: Search depth (higher = better recall, slower speed)
+        - `topk`: Number of results to return
+        - `return_emb`: Whether to include embeddings in results
+
+        Output: List of (eid, embedding, similarity) tuples.
+            - Similarity is cosine similarity in range [-1, 1].
+            - If `return_emb` is False, embedding will be None.
+        """
+        if emb is None and eid is None:
+            raise ValueError("Either 'emb' or 'eid' must be provided")
+        # get query embedding
+        if emb is not None:
+            query_emb = norm_embs(emb)
+        else:
+            query_emb = self.get_emb_by_eid(eid)
+            if query_emb is None:
+                raise ValueError(f"Eid '{eid}' not found in database")
+            query_emb = query_emb.reshape(1, -1)
+            # already normalized when stored, but ensure it's normalized
+            faiss.normalize_L2(query_emb)
+        # set search params and perform search
+        self._set_search_params(efSearch=efSearch)
+        similarities, iids = self.db.search(query_emb, topk)
+        # build results
+        results: list[tuple[EidType, Optional[EmbType], SimType]] = []
+        if return_emb:
+            hnsw_index = faiss.downcast_index(self.db.index)
+        else:
+            hnsw_index = None
+        for sim, iid in zip(similarities[0], iids[0]):
+            if iid == -1:  # Invalid index (fewer results than topk)
+                continue
+            eid = self.iid_to_eid.get(iid)
+            if eid is None:
+                continue
+            if return_emb:
+                res_emb = hnsw_index.reconstruct(int(iid))
+            else:
+                res_emb = None
+            results.append((eid, res_emb, float(sim)))
+        return results
