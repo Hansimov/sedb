@@ -76,8 +76,12 @@ class FaissOperator:
         )
 
     def _log_db_info(self):
-        logger.mesg(f"  * db_path: {self.db_path}")
-        logger.mesg(f"  * {self.total_count()} rows")
+        logger.okay(f"  * db_path: {self.db_path}")
+        logger.file(f"  * {self.total_count()} rows")
+
+    def _log_mappings(self):
+        logger.okay(f"  * map_path: {self.map_path}")
+        logger.file(f"  * {len(self.iid_to_eid)} mappings")
 
     def init_db(self):
         """Create new faiss index"""
@@ -97,7 +101,8 @@ class FaissOperator:
         """Load index params from loaded index"""
         hnsw_index = faiss.downcast_index(self.db.index)
         self.dim = hnsw_index.d
-        self.M = hnsw_index.hnsw.M
+        # M is not directly accessible; level 0 has 2*M neighbors, level 1+ has M
+        self.M = hnsw_index.hnsw.nb_neighbors(1)
         self.efConstruction = hnsw_index.hnsw.efConstruction
         self.efSearch = hnsw_index.hnsw.efSearch
         self._log_params()
@@ -112,8 +117,7 @@ class FaissOperator:
             self.iid_to_eid = pickle.load(f)
         self.eid_to_iid = {eid: idx for idx, eid in self.iid_to_eid.items()}
         self.nid = max(self.iid_to_eid.keys()) + 1 if self.iid_to_eid else 0
-        logger.okay(f"  * {self.map_path}")
-        logger.mesg(f"  * {len(self.iid_to_eid)} mappings")
+        self._log_mappings()
 
     def load_db(self):
         """Load existed faiss index"""
@@ -155,8 +159,7 @@ class FaissOperator:
         logger.note(f"> Save iid-eid mappings:")
         with open(self.map_path, "wb") as f:
             pickle.dump(self.iid_to_eid, f, protocol=pickle.HIGHEST_PROTOCOL)
-        logger.okay(f"  * {self.map_path}")
-        logger.mesg(f"  * {len(self.iid_to_eid)} mappings")
+        self._log_mappings()
 
     def save(self):
         self._save_index()
