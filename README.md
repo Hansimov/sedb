@@ -15,9 +15,10 @@ Currently, `sedb` supports interacting with following services:
   - MongoDB
   - ElasticSearch
   - Redis
-  - LLM REST API (OpenAI format)
+  - RocksDB
 
 - vector:
+  - Faiss
   - Milvus
   - Qdrant
 

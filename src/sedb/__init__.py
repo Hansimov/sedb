@@ -24,6 +24,7 @@ from .mongo_generator import MongoDocsGenerator, MongoDocsGeneratorArgParser
 from .mongo_generator import cli_args_to_mongo_configs, cli_args_to_mongo_extend_params
 from .redis import RedisOperator, RedisConfigsType
 from .rocks import RocksOperator, RocksConfigsType
+from .faiss import FaissOperator, FaissConfigsType
 from .milvus import MilvusOperator, MilvusConfigsType
 from .qdrant import QdrantOperator, QdrantConfigsType
 from .bridger import MongoBridger, MilvusBridger, ElasticBridger, RocksBridger
