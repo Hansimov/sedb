@@ -148,17 +148,17 @@ class RocksOperator:
             raise ValueError("Input must be dict or list of (key, value) tuples")
         self.db.write(wb)
 
-    def flush(self):
+    def flush(self, verbose: bool = False):
         self.db.flush()
-        # if self.verbose:
-        #     status = "Flushed"
-        #     logger.file(f"  * RocksDB: {brk(status)}", self.indent)
+        if verbose:
+            status = "Flushed"
+            logger.file(f"  * RocksDB: {brk(status)}", self.indent)
 
-    def close(self):
+    def close(self, verbose: bool = False):
         self.db.close()
-        # if self.verbose:
-        #     status = "Closed"
-        #     logger.warn(f"  - RocksDB: {brk(status)}", self.indent)
+        if verbose:
+            status = "Closed"
+            logger.warn(f"  - RocksDB: {brk(status)}", self.indent)
 
     def __del__(self):
         try:

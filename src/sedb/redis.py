@@ -232,39 +232,33 @@ class RedisOperator:
         scanned_count = 0
         cursor = 0
         batch_size = batch_size or 1000
-        try:
-            while True:
-                cursor, scan_keys = self.client.scan(
-                    cursor=cursor, match=match_pattern, count=1000
-                )
-                if scan_keys:
-                    scanned_count += len(scan_keys)
-                    if scanned_count > total_count:
-                        remain_count = total_count - (scanned_count - len(scan_keys))
-                        scan_keys = scan_keys[:remain_count]
-                    scan_keys = [
-                        key.decode("utf-8") if isinstance(key, bytes) else key
-                        for key in scan_keys
-                    ]
-                    if scan_keys:
-                        desc = f"  * {scan_keys[0]}"
-                    else:
-                        desc = f"  * Finished"
-                    bar.update(len(scan_keys), desc=desc)
-                    yield_keys.extend(scan_keys)
-                    if len(yield_keys) >= batch_size:
-                        yield yield_keys
-                        yield_keys = []
-                if cursor == 0:
-                    break
-                if scanned_count >= total_count:
-                    break
-            if yield_keys:
-                yield yield_keys
-                yield_keys = []
-            print()
-        except KeyboardInterrupt as e:
-            logger.warn(
-                f"× Scan interrupted by user, scanned {brk(scanned_count)} keys"
+        while True:
+            cursor, scan_keys = self.client.scan(
+                cursor=cursor, match=match_pattern, count=1000
             )
-            raise e
+            if scan_keys:
+                scanned_count += len(scan_keys)
+                if scanned_count > total_count:
+                    remain_count = total_count - (scanned_count - len(scan_keys))
+                    scan_keys = scan_keys[:remain_count]
+                scan_keys = [
+                    key.decode("utf-8") if isinstance(key, bytes) else key
+                    for key in scan_keys
+                ]
+                if scan_keys:
+                    desc = f"  * {scan_keys[0]}"
+                else:
+                    desc = f"  * Finished"
+                bar.update(len(scan_keys), desc=desc)
+                yield_keys.extend(scan_keys)
+                if len(yield_keys) >= batch_size:
+                    yield yield_keys
+                    yield_keys = []
+            if cursor == 0:
+                break
+            if scanned_count >= total_count:
+                break
+        if yield_keys:
+            yield yield_keys
+            yield_keys = []
+        print()
