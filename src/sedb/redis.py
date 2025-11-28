@@ -211,7 +211,11 @@ class RedisOperator:
         return self.client.eval(lua_script, 0, match_pattern)
 
     def scan_keys(
-        self, prefix: str = None, pattern: str = None, max_count: int = None
+        self,
+        prefix: str = None,
+        pattern: str = None,
+        max_count: int = None,
+        batch_size: int = None,
     ) -> Generator[list[str], None, None]:
         """Priority: prefix > pattern; if both None, return all keys of whole DB"""
         if prefix:
@@ -224,27 +228,36 @@ class RedisOperator:
         total_count = max_count or all_count
         logger.note(f"> Scan redis keys: {logstr.file(brk(total_count))}")
         bar = TCLogbar(total=total_count, desc="* ")
-        batch_keys = []
+        yield_keys = []
         scanned_count = 0
         cursor = 0
         while True:
-            cursor, batch_keys = self.client.scan(
+            cursor, scan_keys = self.client.scan(
                 cursor=cursor, match=match_pattern, count=1000
             )
-            if batch_keys:
-                scanned_count += len(batch_keys)
+            if scan_keys:
+                scanned_count += len(scan_keys)
                 if scanned_count > total_count:
-                    remain_count = total_count - (scanned_count - len(batch_keys))
-                    batch_keys = batch_keys[:remain_count]
-                batch_keys = [
+                    remain_count = total_count - (scanned_count - len(scan_keys))
+                    scan_keys = scan_keys[:remain_count]
+                scan_keys = [
                     key.decode("utf-8") if isinstance(key, bytes) else key
-                    for key in batch_keys
+                    for key in scan_keys
                 ]
-                bar.update(len(batch_keys), desc=f"  * {batch_keys[0]}")
-                yield batch_keys
-                batch_keys = []
+                if scan_keys:
+                    desc = f"  * {scan_keys[0]}"
+                else:
+                    desc = f"  * Finished"
+                bar.update(len(scan_keys), desc=desc)
+                yield_keys.extend(scan_keys)
+                if batch_size and len(yield_keys) >= batch_size:
+                    yield yield_keys
+                    yield_keys = []
             if cursor == 0:
                 break
             if scanned_count >= total_count:
                 break
+        if yield_keys:
+            yield yield_keys
+            yield_keys = []
         print()
