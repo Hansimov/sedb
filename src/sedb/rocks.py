@@ -13,7 +13,7 @@ logger = TCLogger()
 
 class RocksConfigsType(TypedDict):
     db_path: Union[str, Path]
-    max_open_files: int = 20000
+    max_open_files: int = -1
     target_file_size_base_mb: int = 64
     write_buffer_size_mb: int = 64
     level_zero_slowdown_writes_trigger: int = 20000
@@ -30,7 +30,7 @@ class RocksOperator:
     Write Stalls · facebook/rocksdb Wiki
     * https://github.com/facebook/rocksdb/wiki/Write-Stalls
 
-    NOTE: Run `ulimit -n 20000` to increase the max open files limit system-wide
+    NOTE: Run `ulimit -n 1048576` to increase the max open files limit system-wide
     """
 
     def __init__(
@@ -77,7 +77,10 @@ class RocksOperator:
         options.create_if_missing(True)
         options.set_max_file_opening_threads(128)
         options.set_max_background_jobs(128)
-        options.set_max_open_files(self.configs.get("max_open_files", 20000))
+        # set "max_open_files" to -1 means manage file handles automatically,
+        # which could resolve "Too many open files" issue,
+        # NOTE: run cmd to increase limit: `ulimit -n 1048576`
+        options.set_max_open_files(self.configs.get("max_open_files", -1))
         options.set_target_file_size_base(
             self.configs.get("target_file_size_base_mb", 64) * 1024 * 1024
         )
