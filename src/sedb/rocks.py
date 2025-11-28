@@ -1,10 +1,12 @@
+import re
 import threading
 
 from rocksdict import Rdict, Options, WriteOptions, WriteBatch
 from pathlib import Path
-from tclogger import FileLogger, TCLogger, brk
+from tclogger import FileLogger, TCLogger, TCLogbar, logstr, brp, brk
 from tclogger import PathType, norm_path
-from typing import TypedDict, Union, Any
+from tclogger import KeyType, KeysType
+from typing import Generator, Literal, TypedDict, Union, Any
 
 from .message import ConnectMessager
 
@@ -166,3 +168,97 @@ class RocksOperator:
             self.close()
         except Exception as e:
             pass
+
+    def _iter(
+        self,
+        iter_type: Literal["keys", "vals", "items"] = "keys",
+        pattern: str = None,
+        max_count: int = None,
+        batch_size: int = None,
+    ) -> Generator[Union[KeysType, list[Any], list[tuple[KeyType, Any]]], None, None]:
+        """Core iteration method for keys, values, or items."""
+        if pattern:
+            regex = re.compile(pattern)
+        else:
+            regex = None
+
+        all_count = self.get_total_count()
+        total_count = max_count or all_count
+        batch_size = batch_size or 1000
+
+        logger.note(
+            f"> Iter rocks: {logstr.mesg(brp(iter_type))}: "
+            f"{logstr.file(brk(total_count))}"
+        )
+        bar = TCLogbar(total=total_count, desc="* ")
+
+        if iter_type == "keys":
+            iterator = self.db.keys()
+        else:
+            iterator = self.db.items()
+
+        yield_batch = []
+        scanned_count = 0
+        for item in iterator:
+            if scanned_count >= total_count:
+                break
+
+            if iter_type == "keys":
+                key, val = item, None
+            else:
+                key, val = item
+
+            if isinstance(key, bytes):
+                key_str = key.decode("utf-8")
+            else:
+                key_str = str(key)
+
+            if regex and not regex.match(key_str):
+                continue
+
+            scanned_count += 1
+
+            if iter_type == "keys":
+                yield_batch.append(key)
+            elif iter_type == "vals":
+                yield_batch.append(val)
+            else:
+                yield_batch.append((key, val))
+
+            bar.update(1, desc=f"  * {key_str}")
+
+            if len(yield_batch) >= batch_size:
+                yield yield_batch
+                yield_batch = []
+
+        if yield_batch:
+            yield yield_batch
+            yield_batch = []
+        print()
+
+    def iter_keys(
+        self,
+        pattern: str = None,
+        max_count: int = None,
+        batch_size: int = None,
+    ) -> Generator[KeysType, None, None]:
+        """yield list of keys"""
+        return self._iter("keys", pattern, max_count, batch_size)
+
+    def iter_vals(
+        self,
+        pattern: str = None,
+        max_count: int = None,
+        batch_size: int = None,
+    ) -> Generator[list[Any], None, None]:
+        """yield list of values"""
+        return self._iter("vals", pattern, max_count, batch_size)
+
+    def iter_items(
+        self,
+        pattern: str = None,
+        max_count: int = None,
+        batch_size: int = None,
+    ) -> Generator[list[tuple[KeyType, Any]], None, None]:
+        """yield list of tuples: (key, value)"""
+        return self._iter("items", pattern, max_count, batch_size)
