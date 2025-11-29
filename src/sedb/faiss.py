@@ -31,6 +31,20 @@ def norm_embs(embs: np.ndarray) -> np.ndarray:
     return embs
 
 
+def unify_eids_embs(
+    eids: list[EidType], embs: EmbType
+) -> tuple[list[EidType], np.ndarray]:
+    """Unify and pick valid pairs of eids and embeddings.
+    Return: (valid_eids, embs_arr)
+    """
+    pairs = [(eid, emb) for eid, emb in zip(eids, embs) if eid and emb is not None]
+    if not pairs:
+        return [], np.array([], dtype="float32")
+    valid_eids = [eid for eid, _ in pairs]
+    embs_arr = np.array([emb for _, emb in pairs], dtype="float32")
+    return valid_eids, embs_arr
+
+
 class FaissOperator:
     def __init__(
         self,
@@ -131,19 +145,22 @@ class FaissOperator:
 
     def add_embs(self, eids: list[str], embs: np.ndarray):
         """Add embeddings to index. Skip existed eids, as index update is not allowed in hnsw."""
-        new_iids = []
-        new_embs_idx = []
-        for i, eid in enumerate(eids):
+        if len(eids) == 0 or len(embs) == 0:
+            return
+        xeids, xembs = unify_eids_embs(eids, embs)
+        new_iids: list[int] = []
+        new_embs_idxs: list[int] = []
+        for i, eid in enumerate(xeids):
             if eid in self.eid_to_iid:
                 continue
             self.eid_to_iid[eid] = self.nid
             self.iid_to_eid[self.nid] = eid
             new_iids.append(self.nid)
-            new_embs_idx.append(i)
+            new_embs_idxs.append(i)
             self.nid += 1
         if new_iids:
             new_iids_arr = np.array(new_iids, dtype=np.int64)
-            new_embs = embs[new_embs_idx]
+            new_embs = xembs[new_embs_idxs]
             new_embs_arr = norm_embs(new_embs)
             self.db.add_with_ids(new_embs_arr, new_iids_arr)
 
