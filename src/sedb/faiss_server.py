@@ -8,36 +8,36 @@ from typing import Optional
 
 from .faiss import FaissOperator, EidType
 
+NoneField = Field(default=None, examples=[None])
+EmbsType = list[float]
+OptEmbsType = Optional[EmbsType]
+
 
 class GetEmbByEidRequest(BaseModel):
     eid: EidType
 
 
-class GetEmbByEidResponse(BaseModel):
-    eid: EidType
-    emb: Optional[list[float]] = None
-
-
-class TotalCountResponse(BaseModel):
-    total_count: int
+GetEmbByEidResponse = OptEmbsType
 
 
 class TopRequest(BaseModel):
-    emb: Optional[list[float]] = None
-    eid: Optional[EidType] = None
+    emb: OptEmbsType = NoneField
+    eid: Optional[EidType] = NoneField
     topk: int = Field(default=10, ge=1)
-    efSearch: Optional[int] = None
+    efSearch: Optional[int] = NoneField
     return_emb: bool = False
+
+
+TotalCountResponse = int
 
 
 class TopResultItem(BaseModel):
     eid: EidType
-    emb: Optional[list[float]] = None
+    emb: OptEmbsType = NoneField
     similarity: float
 
 
-class TopResponse(BaseModel):
-    results: list[TopResultItem]
+TopResponse = list[TopResultItem]
 
 
 class FaissServer:
@@ -66,19 +66,19 @@ class FaissServer:
         )
         self.setup_routes()
 
-    async def total_count(self):
+    async def total_count(self) -> TotalCountResponse:
         """Get total count of embeddings in the index."""
         count = self.faiss.total_count()
-        return TotalCountResponse(total_count=count)
+        return count
 
-    async def get_emb_by_eid(self, r: GetEmbByEidRequest):
+    async def get_emb_by_eid(self, r: GetEmbByEidRequest) -> GetEmbByEidResponse:
         """Get embedding by external id (eid)."""
         emb = self.faiss.get_emb_by_eid(r.eid)
         if emb is None:
-            return GetEmbByEidResponse(eid=r.eid, emb=None)
-        return GetEmbByEidResponse(eid=r.eid, emb=emb.tolist())
+            return None
+        return emb.tolist()
 
-    async def top(self, r: TopRequest):
+    async def top(self, r: TopRequest) -> TopResponse:
         """Search for top-k most similar embeddings."""
         if r.emb is None and r.eid is None:
             raise HTTPException(
@@ -100,7 +100,7 @@ class FaissServer:
         for eid, emb, sim in results:
             emb_list = emb.tolist() if emb is not None else None
             items.append(TopResultItem(eid=eid, emb=emb_list, similarity=sim))
-        return TopResponse(results=items)
+        return items
 
     def setup_routes(self):
         self.app.get(
@@ -146,5 +146,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-    # run as a server
+    # run server
     # python -m sedb.faiss_server -d /media/data/tembed/qwen3_06b.faiss
