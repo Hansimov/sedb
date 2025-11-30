@@ -89,12 +89,16 @@ class FaissOperator:
             f"efConstruction={self.efConstruction}, efSearch={self.efSearch}"
         )
 
-    def _log_db_info(self):
+    def _log_db_path(self):
         logger.okay(f"  * db_path: {self.db_path}")
-        logger.file(f"  * {self.total_count()} rows")
 
-    def _log_mappings(self):
+    def _log_db_count(self):
+        logger.file(f"  * {self.total_count()} items")
+
+    def _log_mappings_path(self):
         logger.okay(f"  * map_path: {self.map_path}")
+
+    def _log_mappings_count(self):
         logger.file(f"  * {len(self.iid_to_eid)} mappings")
 
     def init_db(self):
@@ -127,19 +131,21 @@ class FaissOperator:
             logger.warn(f"× Mappings file not found: {self.map_path}")
             return
         logger.note(f"> Load iid-eid mappings:")
+        self._log_mappings_path()
         with open(self.map_path, "rb") as f:
             self.iid_to_eid = pickle.load(f)
         self.eid_to_iid = {eid: idx for idx, eid in self.iid_to_eid.items()}
         self.nid = max(self.iid_to_eid.keys()) + 1 if self.iid_to_eid else 0
-        self._log_mappings()
+        self._log_mappings_count()
 
     def load_db(self):
         """Load existed faiss index"""
         if not self.db_path.exists():
             raise FileNotFoundError(f"Index file not found: {self.db_path}")
         logger.note(f"> Load Faiss index:")
+        self._log_db_path()
         self.db = faiss.read_index(str(self.db_path))
-        self._log_db_info()
+        self._log_db_count()
         self._load_params()
         self._load_mappings()
 
@@ -169,14 +175,16 @@ class FaissOperator:
             logger.warn("× No index to save")
             return
         logger.note(f"> Save index:")
+        self._log_db_path()
         faiss.write_index(self.db, str(self.db_path))
-        self._log_db_info()
+        self._log_db_count()
 
     def _save_mappings(self):
         logger.note(f"> Save iid-eid mappings:")
+        self._log_mappings_path()
         with open(self.map_path, "wb") as f:
             pickle.dump(self.iid_to_eid, f, protocol=pickle.HIGHEST_PROTOCOL)
-        self._log_mappings()
+        self._log_mappings_count()
 
     def save(self):
         self._save_index()
