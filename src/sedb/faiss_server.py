@@ -1,4 +1,5 @@
 import argparse
+import requests
 import uvicorn
 
 from fastapi import FastAPI, HTTPException
@@ -7,6 +8,8 @@ from tclogger import PathType
 from typing import Optional
 
 from .faiss import FaissOperator, EidType
+
+FAISS_PORT = 28415
 
 NoneField = Field(default=None, examples=[None])
 EmbsType = list[float]
@@ -45,7 +48,7 @@ class FaissServer:
         self,
         db_path: PathType,
         host: str = "0.0.0.0",
-        port: int = 28415,
+        port: int = FAISS_PORT,
     ):
         self.db_path = db_path
         self.host = host
@@ -125,12 +128,58 @@ class FaissServer:
         uvicorn.run(self.app, host=self.host, port=self.port)
 
 
+class FaissClient:
+    def __init__(self, host: str = "localhost", port: int = FAISS_PORT):
+        self.host = host
+        self.port = port
+        self.endpoint = f"http://{host}:{port}"
+
+    def total_count(self) -> TotalCountResponse:
+        """Get total count of embeddings in the index."""
+        resp = requests.get(f"{self.endpoint}/total_count")
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_emb_by_eid(self, eid: EidType) -> GetEmbByEidResponse:
+        """Get embedding by external id (eid)."""
+        resp = requests.post(
+            f"{self.endpoint}/get_emb_by_eid",
+            json={
+                "eid": eid,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def top(
+        self,
+        emb: OptEmbsType = None,
+        eid: Optional[EidType] = None,
+        topk: int = 10,
+        efSearch: Optional[int] = None,
+        return_emb: bool = False,
+    ) -> TopResponse:
+        """Search for top-k most similar embeddings."""
+        resp = requests.post(
+            f"{self.endpoint}/top",
+            json={
+                "emb": emb,
+                "eid": eid,
+                "topk": topk,
+                "efSearch": efSearch,
+                "return_emb": return_emb,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 class FaissServerArgParser(argparse.ArgumentParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.add_argument("-d", "--db-path", type=str, required=True)
         self.add_argument("-H", "--host", type=str, default="0.0.0.0")
-        self.add_argument("-P", "--port", type=int, default=28415)
+        self.add_argument("-P", "--port", type=int, default=FAISS_PORT)
 
 
 def main():
