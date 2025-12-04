@@ -44,7 +44,7 @@ TotalCountResponse = int
 class TopResultItem(BaseModel):
     eid: EidType
     emb: OptEmbsType = NoneField
-    similarity: float
+    sim: float
 
 
 TopResponse = list[TopResultItem]
@@ -131,7 +131,7 @@ class FaissServer:
         items = []
         for eid, emb, sim in results:
             emb_list = emb.tolist() if emb is not None else None
-            items.append(TopResultItem(eid=eid, emb=emb_list, similarity=sim))
+            items.append(TopResultItem(eid=eid, emb=emb_list, sim=sim))
         return items
 
     async def tops(self, r: TopsRequest) -> TopsResponse:
@@ -157,7 +157,7 @@ class FaissServer:
             items = []
             for eid, emb, sim in results:
                 emb_list = emb.tolist() if emb is not None else None
-                items.append(TopResultItem(eid=eid, emb=emb_list, similarity=sim))
+                items.append(TopResultItem(eid=eid, emb=emb_list, sim=sim))
             all_items.append(items)
         return all_items
 
