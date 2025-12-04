@@ -23,6 +23,13 @@ class GetEmbByEidRequest(BaseModel):
 GetEmbByEidResponse = OptEmbsType
 
 
+class GetEmbsByEidsRequest(BaseModel):
+    eids: list[EidType]
+
+
+GetEmbsByEidsResponse = list[OptEmbsType]
+
+
 class TopRequest(BaseModel):
     emb: OptEmbsType = NoneField
     eid: Optional[EidType] = NoneField
@@ -41,6 +48,17 @@ class TopResultItem(BaseModel):
 
 
 TopResponse = list[TopResultItem]
+
+
+class TopsRequest(BaseModel):
+    embs: Optional[list[EmbsType]] = NoneField
+    eids: Optional[list[EidType]] = NoneField
+    topk: int = Field(default=10, ge=1)
+    efSearch: Optional[int] = NoneField
+    return_emb: bool = False
+
+
+TopsResponse = list[list[TopResultItem]]
 
 
 class FaissServer:
@@ -81,6 +99,17 @@ class FaissServer:
             return None
         return emb.tolist()
 
+    async def get_embs_by_eids(self, r: GetEmbsByEidsRequest) -> GetEmbsByEidsResponse:
+        """Get embeddings by multiple external ids (eids)."""
+        embs = self.faiss.get_embs_by_eids(r.eids)
+        results = []
+        for emb in embs:
+            if emb is None:
+                results.append(None)
+            else:
+                results.append(emb.tolist())
+        return results
+
     async def top(self, r: TopRequest) -> TopResponse:
         """Search for top-k most similar embeddings."""
         if r.emb is None and r.eid is None:
@@ -105,6 +134,33 @@ class FaissServer:
             items.append(TopResultItem(eid=eid, emb=emb_list, similarity=sim))
         return items
 
+    async def tops(self, r: TopsRequest) -> TopsResponse:
+        """Batch search for top-k most similar embeddings."""
+        if r.embs is None and r.eids is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Either 'embs' or 'eids' must be provided",
+            )
+        try:
+            all_results = self.faiss.tops(
+                embs=r.embs,
+                eids=r.eids,
+                topk=r.topk,
+                efSearch=r.efSearch,
+                return_emb=r.return_emb,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        all_items = []
+        for results in all_results:
+            items = []
+            for eid, emb, sim in results:
+                emb_list = emb.tolist() if emb is not None else None
+                items.append(TopResultItem(eid=eid, emb=emb_list, similarity=sim))
+            all_items.append(items)
+        return all_items
+
     def setup_routes(self):
         self.app.get(
             "/total_count",
@@ -119,10 +175,22 @@ class FaissServer:
         )(self.get_emb_by_eid)
 
         self.app.post(
+            "/get_embs_by_eids",
+            response_model=GetEmbsByEidsResponse,
+            summary="Get embeddings by eids",
+        )(self.get_embs_by_eids)
+
+        self.app.post(
             "/top",
             response_model=TopResponse,
             summary="Top-k similarity search",
         )(self.top)
+
+        self.app.post(
+            "/tops",
+            response_model=TopsResponse,
+            summary="Batch top-k similarity search",
+        )(self.tops)
 
     def run(self):
         uvicorn.run(self.app, host=self.host, port=self.port)
@@ -151,6 +219,17 @@ class FaissClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_embs_by_eids(self, eids: list[EidType]) -> GetEmbsByEidsResponse:
+        """Get embeddings by multiple external ids (eids)."""
+        resp = requests.post(
+            f"{self.endpoint}/get_embs_by_eids",
+            json={
+                "eids": eids,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def top(
         self,
         emb: OptEmbsType = None,
@@ -165,6 +244,28 @@ class FaissClient:
             json={
                 "emb": emb,
                 "eid": eid,
+                "topk": topk,
+                "efSearch": efSearch,
+                "return_emb": return_emb,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def tops(
+        self,
+        embs: Optional[list[EmbsType]] = None,
+        eids: Optional[list[EidType]] = None,
+        topk: int = 10,
+        efSearch: Optional[int] = None,
+        return_emb: bool = False,
+    ) -> TopsResponse:
+        """Batch search for top-k most similar embeddings."""
+        resp = requests.post(
+            f"{self.endpoint}/tops",
+            json={
+                "embs": embs,
+                "eids": eids,
                 "topk": topk,
                 "efSearch": efSearch,
                 "return_emb": return_emb,

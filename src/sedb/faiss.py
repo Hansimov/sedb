@@ -82,6 +82,7 @@ class FaissOperator:
         self.iid_to_eid: dict[int, str] = {}
         self.nid: int = 0
         self.db: faiss.IndexIDMap = None
+        self.hnsw_index = None
 
     def _log_params(self):
         logger.mesg(
@@ -113,11 +114,12 @@ class FaissOperator:
         hnsw_index.hnsw.efSearch = self.efSearch
         # IndexIDMap: wrapper that allows custom int64 IDs
         self.db = faiss.IndexIDMap(hnsw_index)
+        self.hnsw_index = hnsw_index
         self._log_params()
 
     def _load_params(self):
         """Load index params from loaded index"""
-        hnsw_index = faiss.downcast_index(self.db.index)
+        hnsw_index = self.hnsw_index
         self.dim = hnsw_index.d
         # M is not directly accessible; level 0 has 2*M neighbors, level 1+ has M
         self.M = hnsw_index.hnsw.nb_neighbors(1)
@@ -145,6 +147,7 @@ class FaissOperator:
         logger.note(f"> Load Faiss index:")
         self._log_db_path()
         self.db = faiss.read_index(str(self.db_path))
+        self.hnsw_index = faiss.downcast_index(self.db.index)
         self._log_db_count()
         self._load_params()
         self._load_mappings()
@@ -200,15 +203,34 @@ class FaissOperator:
         if eid not in self.eid_to_iid:
             return None
         iid = self.eid_to_iid[eid]
-        hnsw_index = faiss.downcast_index(self.db.index)
+        hnsw_index = self.hnsw_index
         emb = hnsw_index.reconstruct(iid)
         return emb
 
+    def get_embs_by_eids(self, eids: list[EidType]) -> list[Optional[np.ndarray]]:
+        """Get embeddings by multiple eids"""
+        if not eids:
+            return []
+        valid_eids = []
+        valid_iids = []
+        for idx, eid in enumerate(eids):
+            if eid in self.eid_to_iid:
+                valid_eids.append(idx)
+                valid_iids.append(self.eid_to_iid[eid])
+        results: list[Optional[np.ndarray]] = [None] * len(eids)
+        if valid_iids:
+            valid_iids_arr = np.array(valid_iids, dtype=np.int64)
+            recons = self.hnsw_index.reconstruct_batch(valid_iids_arr)
+            for i, idx in enumerate(valid_eids):
+                results[idx] = recons[i]
+        return results
+
     def _set_search_params(self, efSearch: int = None):
         """Must call this before using `top()`"""
-        self.efSearch = efSearch or self.efSearch
-        hnsw_index = faiss.downcast_index(self.db.index)
-        hnsw_index.hnsw.efSearch = self.efSearch
+        if efSearch is None or efSearch == self.efSearch:
+            return
+        self.efSearch = efSearch
+        self.hnsw_index.hnsw.efSearch = efSearch
 
     def top(
         self,
@@ -249,10 +271,6 @@ class FaissOperator:
         similarities, iids = self.db.search(query_emb, topk)
         # build results
         results: list[tuple[EidType, Optional[EmbType], SimType]] = []
-        if return_emb:
-            hnsw_index = faiss.downcast_index(self.db.index)
-        else:
-            hnsw_index = None
         for sim, iid in zip(similarities[0], iids[0]):
             if iid == -1:  # Invalid index (fewer results than topk)
                 continue
@@ -260,8 +278,85 @@ class FaissOperator:
             if eid is None:
                 continue
             if return_emb:
-                res_emb = hnsw_index.reconstruct(int(iid))
+                res_emb = self.hnsw_index.reconstruct(int(iid))
             else:
                 res_emb = None
             results.append((eid, res_emb, float(sim)))
         return results
+
+    def tops(
+        self,
+        embs: list[EmbType] = None,
+        eids: list[EidType] = None,
+        topk: int = 10,
+        efSearch: int = None,
+        return_emb: bool = False,
+    ) -> list[list[tuple[EidType, Optional[EmbType], SimType]]]:
+        """
+        Batch search for the top-k most similar items using cosine similarity.
+
+        Input:
+        - `embs`: List of query embedding vectors (will be normalized)
+        - `eids`: List of query by existed eids in the database
+        - `efSearch`: Search depth (higher = better recall, slower speed)
+        - `topk`: Number of results to return per query
+        - `return_emb`: Whether to include embeddings in results
+
+        Output: List of lists of (eid, embedding, similarity) tuples.
+            - Similarity is cosine similarity in range [-1, 1].
+            - If `return_emb` is False, embedding will be None.
+        """
+        if embs is None and eids is None:
+            raise ValueError("Either 'embs' or 'eids' must be provided")
+
+        # get query embeddings
+        if embs is not None:
+            query_embs = norm_embs(np.array(embs, dtype=np.float32))
+        else:
+            query_embs_list = []
+            for eid in eids:
+                query_emb = self.get_emb_by_eid(eid)
+                if query_emb is None:
+                    raise ValueError(f"Eid '{eid}' not found in database")
+                query_embs_list.append(query_emb)
+            query_embs = np.array(query_embs_list, dtype=np.float32)
+            # already normalized when stored, but ensure it's normalized
+            faiss.normalize_L2(query_embs)
+
+        # set search params and perform batch search
+        self._set_search_params(efSearch=efSearch)
+        similarities, iids = self.db.search(query_embs, topk)
+
+        # if return_emb, reconstruct all needed embeddings
+        emb_cache: dict[int, np.ndarray] = {}
+        if return_emb:
+            unique_iids = set()
+            for query_idx in range(len(query_embs)):
+                for iid in iids[query_idx]:
+                    if iid != -1 and iid in self.iid_to_eid:
+                        unique_iids.add(int(iid))
+            if unique_iids:
+                unique_iids_list = list(unique_iids)
+                unique_iids_arr = np.array(unique_iids_list, dtype=np.int64)
+                recons = self.hnsw_index.reconstruct_batch(unique_iids_arr)
+                for i, iid in enumerate(unique_iids_list):
+                    emb_cache[iid] = recons[i]
+
+        # build results
+        all_results: list[list[tuple[EidType, Optional[EmbType], SimType]]] = []
+        for query_idx in range(len(query_embs)):
+            results: list[tuple[EidType, Optional[EmbType], SimType]] = []
+            for sim, iid in zip(similarities[query_idx], iids[query_idx]):
+                if iid == -1:  # Invalid index (fewer results than topk)
+                    continue
+                eid = self.iid_to_eid.get(iid)
+                if eid is None:
+                    continue
+                if return_emb:
+                    res_emb = emb_cache.get(int(iid))
+                else:
+                    res_emb = None
+                results.append((eid, res_emb, float(sim)))
+            all_results.append(results)
+
+        return all_results
