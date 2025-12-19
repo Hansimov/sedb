@@ -19,6 +19,31 @@ def calc_parallelism(max_value: int = 128) -> int:
     return min(os.cpu_count() or 8, max_value)
 
 
+# Global shared block cache - shared across all RocksOperator instances
+# This ensures data cached by one instance can be reused by others
+_SHARED_BLOCK_CACHE: Cache = None
+_SHARED_BLOCK_CACHE_LOCK = threading.Lock()
+
+
+def get_shared_block_cache(size_mb: int = 8192) -> Cache:
+    """Get or create a shared block cache.
+
+    Block cache is shared across all RocksOperator instances in the same process.
+    This improves cache efficiency when multiple DB connections are created.
+    """
+    global _SHARED_BLOCK_CACHE
+    with _SHARED_BLOCK_CACHE_LOCK:
+        if _SHARED_BLOCK_CACHE is None:
+            _SHARED_BLOCK_CACHE = Cache(size_mb * 1024 * 1024)
+        else:
+            # Resize if requested size is different
+            # Note: Cache.set_capacity() can dynamically change the cache size
+            current_size = size_mb * 1024 * 1024
+            # Cache doesn't expose get_capacity(), so we track it via property
+            _SHARED_BLOCK_CACHE.set_capacity(current_size)
+        return _SHARED_BLOCK_CACHE
+
+
 class RocksConfigsType(TypedDict):
     db_path: Union[str, Path]
     # options
@@ -114,11 +139,13 @@ class RocksOperator:
         )
         options.set_compression_type(DBCompressionType.lz4())
 
-        # init table options
+        # init table options with SHARED block cache
+        # Using shared cache ensures data cached by one RocksOperator can be
+        # reused by other instances (e.g., benchmark analyzer + benchmark runner)
         table_options = BlockBasedOptions()
-        table_options.set_block_cache(
-            Cache(self.configs.get("block_cache_size_mb", 8192) * 1024 * 1024)
-        )
+        cache_size_mb = self.configs.get("block_cache_size_mb", 8192)
+        shared_cache = get_shared_block_cache(cache_size_mb)
+        table_options.set_block_cache(shared_cache)
         table_options.set_bloom_filter(
             bits_per_key=self.configs.get("bits_per_key", 10),
             block_based=self.configs.get("block_based", False),
