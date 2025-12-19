@@ -1,7 +1,9 @@
+import os
 import re
 import threading
 
-from rocksdict import Rdict, Options, WriteOptions, WriteBatch
+from rocksdict import Rdict, Options, BlockBasedOptions, WriteOptions
+from rocksdict import WriteBatch, Cache, DBCompressionType
 from pathlib import Path
 from tclogger import FileLogger, TCLogger, TCLogbar, logstr, brp, brk
 from tclogger import PathType, norm_path
@@ -13,13 +15,23 @@ from .message import ConnectMessager
 logger = TCLogger()
 
 
+def calc_parallelism(max_value: int = 128) -> int:
+    return min(os.cpu_count() or 8, max_value)
+
+
 class RocksConfigsType(TypedDict):
     db_path: Union[str, Path]
+    # options
     max_open_files: int = -1
-    target_file_size_base_mb: int = 64
-    write_buffer_size_mb: int = 64
+    target_file_size_base_mb: int = 256
+    write_buffer_size_mb: int = 256
     level_zero_slowdown_writes_trigger: int = 20000
     level_zero_stop_writes_trigger: int = 50000
+    parallelism: int = calc_parallelism()
+    # table options
+    block_cache_size_mb: int = 8192  # 8 GB
+    bits_per_key: int = 10
+    block_based: bool = False
 
 
 class RocksOperator:
@@ -78,7 +90,12 @@ class RocksOperator:
         options = Options(raw_mode=self.raw_mode)
         options.create_if_missing(True)
         options.set_max_file_opening_threads(128)
-        options.set_max_background_jobs(128)
+        options.increase_parallelism(
+            self.configs.get("parallelism", calc_parallelism())
+        )
+        options.set_max_background_jobs(
+            self.configs.get("parallelism", calc_parallelism())
+        )
         # set "max_open_files" to -1 means manage file handles automatically,
         # which could resolve "Too many open files" issue,
         # NOTE: run cmd to increase limit: `ulimit -n 1048576`
@@ -95,6 +112,21 @@ class RocksOperator:
         options.set_level_zero_stop_writes_trigger(
             self.configs.get("level_zero_stop_writes_trigger", 50000)
         )
+        options.set_compression_type(DBCompressionType.lz4())
+
+        # init table options
+        table_options = BlockBasedOptions()
+        table_options.set_block_cache(
+            Cache(self.configs.get("block_cache_size_mb", 8192) * 1024 * 1024)
+        )
+        table_options.set_bloom_filter(
+            bits_per_key=self.configs.get("bits_per_key", 10),
+            block_based=self.configs.get("block_based", False),
+        )
+        table_options.set_cache_index_and_filter_blocks(True)
+        table_options.set_pin_l0_filter_and_index_blocks_in_cache(True)
+        options.set_block_based_table_factory(table_options)
+
         self.db_options = options
 
         # init write options
@@ -102,6 +134,22 @@ class RocksOperator:
         write_options.no_slowdown = True
         self.write_options = write_options
         self.endpoint = norm_path(self.db_path)
+
+    def _remove_options_files(self):
+        """Remove OPTIONS files to prevent rocksdict from auto-loading old configs.
+
+        rocksdict has a bug where it ignores user-provided BlockBasedOptions
+        when reopening an existing database. It internally calls Options.load_latest()
+        which uses a default 8MB cache instead of the user-specified cache size.
+
+        By removing OPTIONS files before opening, we force rocksdict to use
+        our provided options including the correct block cache size.
+        """
+        if not self.db_path.exists():
+            return
+        for f in os.listdir(self.db_path):
+            if f.startswith("OPTIONS"):
+                os.remove(self.db_path / f)
 
     def connect(self):
         self.msgr.log_endpoint()
@@ -112,6 +160,8 @@ class RocksOperator:
                 status = "Created"
             else:
                 status = "Opened"
+                # NOTE: Remove OPTIONS files to ensure block cache config is used
+                self._remove_options_files()
             self.db = Rdict(path=str(self.db_path.resolve()), options=self.db_options)
             self.db.set_write_options(self.write_options)
             if self.verbose:
