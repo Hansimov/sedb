@@ -100,6 +100,32 @@ class MongoOperator:
         logger.note(f"> Getting cursor with args:")
         logger.mesg(dict_to_str(args_dict), indent=logger.log_indent + 2)
 
+    def get_estimate_count(
+        self,
+        collection: str,
+        filter_dict: dict = None,
+        sample_ratio: float = 0.01,
+    ) -> int:
+        db_collect = self.db[collection]
+        total_estimated = db_collect.estimated_document_count()
+        if total_estimated == 0:
+            return 0
+        sample_size = max(1, int(total_estimated * sample_ratio))
+        pipeline = [
+            {"$sample": {"size": sample_size}},
+            {"$match": filter_dict},
+            {"$count": "matched"},
+        ]
+        result = list(db_collect.aggregate(pipeline))
+        matched_in_sample = result[0]["matched"] if result else 0
+        if sample_size > 0:
+            match_ratio = matched_in_sample / sample_size
+            estimated_count = int(total_estimated * match_ratio)
+        else:
+            estimated_count = 0
+            match_ratio = 0
+        return estimated_count
+
     def get_total_count(
         self,
         collection: str,
@@ -108,6 +134,7 @@ class MongoOperator:
         filter_range: FilterRangeType = None,
         extra_filters: list[dict] = None,
         estimate_count: bool = False,
+        sample_ratio: float = 0.001,
     ) -> int:
         logger.note(f"> Counting docs:", end=" ", verbose=self.verbose)
         db_collect = self.db[collection]
@@ -118,20 +145,30 @@ class MongoOperator:
             "date_fields": self.date_fields,
         }
 
-        if filter_range is None or estimate_count:
-            total_count = db_collect.estimated_document_count()
-            logger.success(
+        filter_dict = filter_params_to_mongo_filter(**filter_params)
+        if extra_filters:
+            filter_dict = update_mongo_filter(filter_dict, extra_filters=extra_filters)
+        if estimate_count:
+            # estimate total count if no filters
+            if not filter_dict:
+                total_count = db_collect.estimated_document_count()
+            # estimate filtered count with sampling
+            else:
+                logger.mesg(
+                    f"(sample={sample_ratio*100:.1f}%)", end=" ", verbose=self.verbose
+                )
+                total_count = self.get_estimate_count(
+                    collection=collection,
+                    filter_dict=filter_dict,
+                    sample_ratio=sample_ratio,
+                )
+            logger.okay(
                 f"[{total_count}] {logstr.file('(estimated)')}", verbose=self.verbose
             )
         else:
-            filter_dict = filter_params_to_mongo_filter(**filter_params)
-            if extra_filters:
-                filter_dict = update_mongo_filter(
-                    filter_dict, extra_filters=extra_filters
-                )
+            # exact total count
             total_count = db_collect.count_documents(filter_dict)
-            logger.success(f"[{total_count}]", verbose=self.verbose)
-
+            logger.okay(f"[{total_count}]", verbose=self.verbose)
         return total_count
 
     def get_cursor(
