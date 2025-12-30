@@ -112,6 +112,17 @@ RE_FILTER = rf"{RE_FLAGS}{RE_FIELD}{RE_SYM}({RE_RANGE}|{RE_VALUE})"
 UNIT_NUM_MAP = {"k": 1000, "w": 10000, "m": 1000000}
 RE_UNIT_NUM = r"^(?P<num>[\d.]+)(?P<units>[kKwWmM]*)$"
 
+DURA_NUM_MAP = {
+    "s": 1,
+    "m": 60,  # m: minute
+    "h": 3600,
+    "d": 86400,
+    "w": 86400 * 7,
+    "M": 86400 * 30,  # M: month
+    "y": 86400 * 365,
+}
+RE_DURA_NUM = r"(?P<num>[\d.]+)(?P<dura>([smhdwMy]+)?)"
+
 
 def num_unit_str_to_int(s: str) -> int:
     match = re.match(RE_UNIT_NUM, s)
@@ -124,6 +135,25 @@ def num_unit_str_to_int(s: str) -> int:
     for unit in units.lower():
         num *= UNIT_NUM_MAP.get(unit, 1)
     return num
+
+
+def num_dura_str_to_sec(s: str) -> int:
+    """num-duration to seconds:
+    - "1d30m" -> 86400 + 1800 = 88200
+    - "30" -> 30 (pure number, treat as seconds)
+    """
+    if not re.match(RE_DURA_NUM, s):
+        raise ValueError(f"× Invalid number-duration string: {s}")
+    total_secs = 0
+    for match in re.finditer(RE_DURA_NUM, s):
+        num = float(match.group("num"))
+        dura = match.group("dura")
+        if not dura:
+            total_secs += int(num)
+        else:
+            dura = dura.strip()[0]  # take first char only
+            total_secs += int(num * DURA_NUM_MAP.get(dura, 1))
+    return total_secs
 
 
 def unify_range_value_str(
@@ -167,6 +197,9 @@ def unify_range_value_str(
         if "u" in flags:
             urvs.append(num_unit_str_to_int(rv))
             continue
+        if "r" in flags:
+            urvs.append(num_dura_str_to_sec(rv))
+            continue
         if "s" in flags:
             urvs.append(rv)
             continue
@@ -197,6 +230,7 @@ def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
         - i: type int
         - f: type float
         - u: type int-unit
+        - r: type int-duration
         - s: type str (default)
 
     Examples:
@@ -220,6 +254,17 @@ def filter_str_to_params(filter_str: str) -> MongoFilterParamsType:
         "filter_op": "range",
         "filter_range": ["2023-01-01", "2023-06-01"],
         "is_date_field": True
+    }
+    ```
+
+    * `r:pub_to_insert=[1,1d]`:
+
+    ```
+    {
+        "filter_index": "pub_to_insert",
+        "filter_op": "range",
+        "filter_range": [1, "1d30m"],
+        "is_date_field": False
     }
     ```
 
