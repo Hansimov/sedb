@@ -101,13 +101,13 @@ class MongoDocsGenerator:
 
     def init_progress_bar(self):
         """Must call this before logging progress when iterating cursor."""
-        self.doc_bar = TCLogbar(head=logstr.note("  * Doc:"))
+        self.doc_bar = TCLogbar(head=logstr.note("* Doc"))
         self.doc_bar.set_total(self.total_count)
         skip_count = self.cursor_params.get("skip_count")
         if skip_count:
             self.doc_bar.set_start_count(skip_count)
             self.doc_bar.set_count(skip_count)
-        self.doc_bar.update(flush=True)
+        # self.doc_bar.update(flush=True)
 
     def init_cli_args(self, ikvs: dict = None, jkvs: dict = None):
         """Must call this before using `self.args`. \n
@@ -227,6 +227,7 @@ class MongoDocsGeneratorArgParser(argparse.ArgumentParser):
         self.add_argument("-sc", "--skip-count", type=int, default=None)
         self.add_argument("-xf", "--extra-filters", type=str, default=None)
         self.add_argument("-nf", "--no-filter", action="store_true", default=False)
+        self.add_argument("-ns", "--no-sort", action="store_true", default=False)
         # cursor args: in/ex-clude fields
         self.add_argument("-if", "--include-fields", type=str, default=None)
         self.add_argument("-ef", "--exclude-fields", type=str, default=None)
@@ -274,7 +275,7 @@ def cli_args_to_mongo_extend_params(args: argparse.Namespace) -> MongoExtendPara
             "filter_range": [args.range_start, args.range_end],
         }
         sort_params = {
-            "sort_index": args.filter_index,
+            "sort_index": None if args.no_sort else args.filter_index,
             "sort_order": args.sort_order,
         }
 
