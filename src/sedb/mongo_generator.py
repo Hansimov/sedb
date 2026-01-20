@@ -101,7 +101,7 @@ class MongoDocsGenerator:
 
     def init_progress_bar(self):
         """Must call this before logging progress when iterating cursor."""
-        self.doc_bar = TCLogbar(head=logstr.note("* Doc"))
+        self.doc_bar = TCLogbar(window_duration=30, head=logstr.note("* Doc"))
         self.doc_bar.set_total(self.total_count)
         skip_count = self.cursor_params.get("skip_count")
         if skip_count:

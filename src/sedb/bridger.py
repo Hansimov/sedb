@@ -14,7 +14,7 @@ class MongoBridger:
 
     def to_id_filter(self, ids: list[str], id_field: str) -> dict:
         if ids:
-            return {"$match": {id_field: {"$in": ids}}}
+            return {id_field: {"$in": ids}}
         else:
             return None
 
@@ -35,7 +35,8 @@ class MongoBridger:
         if not pipeline:
             cursor = collect.find(filter=id_filter, projection=projection)
         else:
-            full_pipeline = [id_filter, *pipeline]
+            match_id_filter = {"$match": id_filter}
+            full_pipeline = [match_id_filter, *pipeline]
             if projection:
                 full_pipeline.append({"$project": projection})
             cursor = collect.aggregate(pipeline=full_pipeline)
