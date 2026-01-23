@@ -1,5 +1,6 @@
 import os
 import re
+import resource
 import threading
 
 from rocksdict import Rdict, Options, BlockBasedOptions, WriteOptions
@@ -13,6 +14,45 @@ from typing import Generator, Literal, TypedDict, Union, Any
 from .message import ConnectMessager
 
 logger = TCLogger()
+
+
+def get_system_max_open_files() -> tuple[int, int]:
+    """Get current and maximum open file limits from the system.
+
+    Returns:
+        tuple: (soft_limit, hard_limit)
+    """
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        return soft, hard
+    except Exception:
+        return 1024, 1024  # Conservative fallback
+
+
+def calc_safe_max_open_files(
+    requested: int = -1,
+    reserve_ratio: float = 0.7,
+    min_value: int = 5000,
+    max_value: int = 500000,
+) -> int:
+    """Calculate a safe max_open_files value based on system limits.
+
+    Args:
+        requested: User-requested value. -1 means auto-calculate.
+        reserve_ratio: Fraction of system limit to use (leave headroom for other processes)
+        min_value: Minimum value to return
+        max_value: Maximum value to return (RocksDB performs well with bounded limits)
+
+    Returns:
+        Safe max_open_files value for RocksDB
+    """
+    if requested > 0:
+        return requested
+
+    soft_limit, hard_limit = get_system_max_open_files()
+    # Use a fraction of soft limit to leave room for other file handles
+    calculated = int(soft_limit * reserve_ratio)
+    return max(min_value, min(calculated, max_value))
 
 
 def calc_parallelism(max_value: int = 128) -> int:
@@ -47,9 +87,11 @@ def get_shared_block_cache(size_mb: int = 8192) -> Cache:
 class RocksConfigsType(TypedDict):
     db_path: Union[str, Path]
     # options
-    max_open_files: int = -1
+    max_open_files: int = -1  # -1 = auto-calculate based on system limits
+    max_file_opening_threads: int = 16
     target_file_size_base_mb: int = 256
     write_buffer_size_mb: int = 256
+    max_write_buffer_number: int = 4
     level_zero_slowdown_writes_trigger: int = 20000
     level_zero_stop_writes_trigger: int = 50000
     parallelism: int = calc_parallelism()
@@ -57,6 +99,9 @@ class RocksConfigsType(TypedDict):
     block_cache_size_mb: int = 8192  # 8 GB
     bits_per_key: int = 10
     block_based: bool = False
+    # retry options for transient errors
+    max_retries: int = 3
+    retry_delay_seconds: float = 1.0
 
 
 class RocksOperator:
@@ -111,25 +156,38 @@ class RocksOperator:
         # init db_path
         self.db_path = Path(self.configs["db_path"])
 
+        # init retry options
+        self.max_retries = self.configs.get("max_retries", 3)
+        self.retry_delay = self.configs.get("retry_delay_seconds", 1.0)
+
         # init db options
         options = Options(raw_mode=self.raw_mode)
         options.create_if_missing(True)
-        options.set_max_file_opening_threads(128)
+
+        # Calculate safe max_open_files based on system limits
+        # Using -1 (unlimited) can cause "Too many open files" when SST count exceeds ulimit
+        requested_max_open = self.configs.get("max_open_files", -1)
+        self.max_open_files = calc_safe_max_open_files(requested_max_open)
+        options.set_max_open_files(self.max_open_files)
+
+        options.set_max_file_opening_threads(
+            self.configs.get("max_file_opening_threads", 16)
+        )
         options.increase_parallelism(
             self.configs.get("parallelism", calc_parallelism())
         )
         options.set_max_background_jobs(
             self.configs.get("parallelism", calc_parallelism())
         )
-        # set "max_open_files" to -1 means manage file handles automatically,
-        # which could resolve "Too many open files" issue,
-        # NOTE: run cmd to increase limit: `ulimit -n 1048576`
-        options.set_max_open_files(self.configs.get("max_open_files", -1))
         options.set_target_file_size_base(
             self.configs.get("target_file_size_base_mb", 64) * 1024 * 1024
         )
         options.set_write_buffer_size(
             self.configs.get("write_buffer_size_mb", 64) * 1024 * 1024
+        )
+        # More write buffers allow more concurrent writes before stalling
+        options.set_max_write_buffer_number(
+            self.configs.get("max_write_buffer_number", 4)
         )
         options.set_level_zero_slowdown_writes_trigger(
             self.configs.get("level_zero_slowdown_writes_trigger", 20000)
@@ -178,25 +236,34 @@ class RocksOperator:
             if f.startswith("OPTIONS"):
                 os.remove(self.db_path / f)
 
+    def _log_connect_info(self, status: str):
+        """Log connection info separately from connect logic."""
+        count = self.get_total_count()
+        count_str = f"{count} keys"
+        logger.okay(f"  * RocksDB: {brk(status)} {brk(count_str)}", self.indent)
+        # Log system limits for debugging file descriptor issues
+        soft_limit, _ = get_system_max_open_files()
+        if soft_limit < 100000:
+            logger.warn(
+                f"  ! System ulimit ({soft_limit}) is low. "
+                f"Run 'ulimit -n 1048576' for better performance.",
+                self.indent,
+            )
+
     def connect(self):
         self.msgr.log_endpoint()
         self.msgr.log_now()
         self.msgr.log_msg()
-        try:
-            if not Path(self.db_path).exists():
-                status = "Created"
-            else:
-                status = "Opened"
-                # NOTE: Remove OPTIONS files to ensure block cache config is used
-                self._remove_options_files()
-            self.db = Rdict(path=str(self.db_path.resolve()), options=self.db_options)
-            self.db.set_write_options(self.write_options)
-            if self.verbose:
-                count = self.get_total_count()
-                count_str = f"{count} keys"
-                logger.okay(f"  * RocksDB: {brk(status)} {brk(count_str)}", self.indent)
-        except Exception as e:
-            raise e
+        if not Path(self.db_path).exists():
+            status = "Created"
+        else:
+            status = "Opened"
+            # NOTE: Remove OPTIONS files to ensure block cache config is used
+            self._remove_options_files()
+        self.db = Rdict(path=str(self.db_path.resolve()), options=self.db_options)
+        self.db.set_write_options(self.write_options)
+        if self.verbose:
+            self._log_connect_info(status)
 
     def get_total_count(self) -> int:
         """- https://rocksdict.github.io/RocksDict/rocksdict.html#Rdict.property_int_value
@@ -213,8 +280,38 @@ class RocksOperator:
     def set(self, key: Union[str, bytes], value: Any):
         self.db.put(key, value)
 
+    def _is_retryable_error(self, e: Exception) -> bool:
+        """Check if an exception is a transient error worth retrying."""
+        error_msg = str(e).lower()
+        return "too many open files" in error_msg or "io error" in error_msg
+
+    def _write_with_retry(self, wb: WriteBatch):
+        """Write a batch with exponential backoff retry for transient errors."""
+        import time
+
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                self.db.write(wb)
+                return
+            except Exception as e:
+                if self._is_retryable_error(e) and attempt < self.max_retries - 1:
+                    last_error = e
+                    delay = self.retry_delay * (2**attempt)
+                    if self.verbose:
+                        logger.warn(
+                            f"  ! RocksDB write failed (attempt {attempt + 1}/{self.max_retries}), "
+                            f"retrying in {delay:.1f}s: {e}",
+                            self.indent,
+                        )
+                    time.sleep(delay)
+                    continue
+                raise e
+        if last_error:
+            raise last_error
+
     def mset(self, d: Union[dict, list[tuple]]):
-        """Set multiple key-value pairs at once with WriteBatch"""
+        """Set multiple key-value pairs at once with WriteBatch."""
         wb = WriteBatch(raw_mode=self.raw_mode)
         if isinstance(d, dict):
             for key, value in d.items():
@@ -225,7 +322,7 @@ class RocksOperator:
                 wb.put(key, value)
         else:
             raise ValueError("Input must be dict or list of (key, value) tuples")
-        self.db.write(wb)
+        self._write_with_retry(wb)
 
     def flush(self, verbose: bool = False):
         self.db.flush()
