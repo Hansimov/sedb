@@ -5,6 +5,8 @@ from typing import TypedDict
 
 from .message import ConnectMessager
 
+REQUEST_TIMEOUT = 30
+
 
 class ElasticConfigsType(TypedDict):
     host: str
@@ -22,12 +24,14 @@ class ElasticOperator:
         connect_cls: type = None,
         verbose: bool = True,
         indent: int = 0,
+        request_timeout: int = REQUEST_TIMEOUT,
     ):
         self.configs = configs
         self.connect_at_init = connect_at_init
         self.connect_msg = connect_msg
         self.indent = indent
         self.verbose = verbose
+        self.request_timeout = request_timeout
         self.init_configs()
         self.msgr = ConnectMessager(
             msg=connect_msg,
@@ -57,6 +61,7 @@ class ElasticOperator:
             hosts=self.endpoint,
             ca_certs=self.ca_certs,
             api_key=self.api_key,
+            request_timeout=self.request_timeout,
             # basic_auth=(self.username, self.password),
         )
         if self.verbose:
