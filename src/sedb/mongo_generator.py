@@ -78,6 +78,7 @@ class MongoDocsGenerator:
             "extra_filters": extra_filters,
             "no_cursor_timeout": no_cursor_timeout,
         }
+        self.skip_count = skip_count
         self.cursor = self.mongo.get_cursor(**self.cursor_params)
         # set non-cursor params
         self.max_count = max_count
@@ -98,6 +99,8 @@ class MongoDocsGenerator:
             return
         if self.max_count:
             self.total_count = min(self.total_count, self.max_count)
+        if self.skip_count:
+            self.total_count += self.skip_count
 
     def init_progress_bar(self):
         """Must call this before logging progress when iterating cursor."""

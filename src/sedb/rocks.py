@@ -4,7 +4,7 @@ import resource
 import threading
 
 from rocksdict import Rdict, Options, BlockBasedOptions, WriteOptions
-from rocksdict import WriteBatch, Cache, DBCompressionType
+from rocksdict import WriteBatch, Cache, DBCompressionType, ReadOptions
 from pathlib import Path
 from tclogger import FileLogger, TCLogger, TCLogbar, logstr, brp, brk
 from tclogger import PathType, norm_path
@@ -91,7 +91,7 @@ def get_shared_block_cache(size_mb: int = 8192) -> Cache:
         return _SHARED_BLOCK_CACHE
 
 
-class RocksConfigsType(TypedDict):
+class RocksConfigsType(TypedDict, total=False):
     db_path: Union[str, Path]
     # options
     max_open_files: int = -1  # -1 = auto-calculate based on system limits
@@ -109,6 +109,14 @@ class RocksConfigsType(TypedDict):
     # retry options for transient errors
     max_retries: int = 3
     retry_delay_seconds: float = 1.0
+    # read optimization options
+    allow_mmap_reads: bool = True  # use mmap for reading SST files
+    advise_random_on_open: bool = True  # optimize for random reads
+    compaction_readahead_size_mb: int = 2  # readahead during compaction
+    # read options (applied at read time, not db open time)
+    verify_checksums: bool = False  # skip checksum verification for speed
+    async_io: bool = True  # enable async IO for parallel reads
+    read_readahead_size_mb: int = 2  # readahead for sequential patterns
 
 
 class RocksOperator:
@@ -204,6 +212,19 @@ class RocksOperator:
         )
         options.set_compression_type(DBCompressionType.lz4())
 
+        # Read optimization options
+        # Enable mmap reads - uses OS page cache, good for read-heavy workloads
+        if self.configs.get("allow_mmap_reads", True):
+            options.set_allow_mmap_reads(True)
+        # Advise random access - tells OS not to do readahead on file open
+        # Good for point lookups, bad for sequential scans
+        if self.configs.get("advise_random_on_open", True):
+            options.set_advise_random_on_open(True)
+        # Compaction readahead - improves compaction performance
+        compaction_readahead_mb = self.configs.get("compaction_readahead_size_mb", 2)
+        if compaction_readahead_mb > 0:
+            options.set_compaction_readahead_size(compaction_readahead_mb * 1024 * 1024)
+
         # init table options with SHARED block cache
         # Using shared cache ensures data cached by one RocksOperator can be
         # reused by other instances (e.g., benchmark analyzer + benchmark runner)
@@ -225,6 +246,20 @@ class RocksOperator:
         write_options = WriteOptions()
         write_options.no_slowdown = True
         self.write_options = write_options
+
+        # init read options for optimized reads
+        read_options = ReadOptions()
+        if self.configs.get("verify_checksums", False) is False:
+            read_options.set_verify_checksums(False)
+        if self.configs.get("async_io", True):
+            read_options.set_async_io(True)
+        read_options.fill_cache(True)
+        readahead_mb = self.configs.get("read_readahead_size_mb", 2)
+        if readahead_mb > 0:
+            read_options.set_readahead_size(readahead_mb * 1024 * 1024)
+        self.read_options = read_options
+
+        # init endpoint with db_path
         self.endpoint = norm_path(self.db_path)
 
     def _remove_options_files(self):
@@ -269,6 +304,7 @@ class RocksOperator:
             self._remove_options_files()
         self.db = Rdict(path=str(self.db_path.resolve()), options=self.db_options)
         self.db.set_write_options(self.write_options)
+        self.db.set_read_options(self.read_options)
         if self.verbose:
             self._log_connect_info(status)
 
@@ -276,6 +312,49 @@ class RocksOperator:
         """- https://rocksdict.github.io/RocksDict/rocksdict.html#Rdict.property_int_value
         - https://github.com/facebook/rocksdb/blob/10.4.fb/include/rocksdb/db.h#L1445"""
         return self.db.property_int_value("rocksdb.estimate-num-keys")
+
+    def get_stats(self) -> dict:
+        """Get database statistics for performance monitoring.
+
+        Returns:
+            dict with various performance metrics including:
+            - estimate_num_keys: Approximate number of keys
+            - estimate_live_data_size: Estimated size of live data
+            - block_cache_usage: Current block cache usage
+        """
+        stats = {
+            "estimate_num_keys": self.db.property_int_value(
+                "rocksdb.estimate-num-keys"
+            ),
+            "estimate_live_data_size": self.db.property_int_value(
+                "rocksdb.estimate-live-data-size"
+            ),
+            "cur_size_all_mem_tables": self.db.property_int_value(
+                "rocksdb.cur-size-all-mem-tables"
+            ),
+            "block_cache_usage": self.db.property_int_value(
+                "rocksdb.block-cache-usage"
+            ),
+            "block_cache_pinned_usage": self.db.property_int_value(
+                "rocksdb.block-cache-pinned-usage"
+            ),
+        }
+
+        return stats
+
+    def log_stats(self):
+        """Log database statistics for debugging and monitoring."""
+        stats = self.get_stats()
+        logger.note(f"  * RocksDB Stats:", self.indent)
+        logger.mesg(f"    - Keys: {stats['estimate_num_keys']:,}", self.indent)
+        logger.mesg(
+            f"    - Live data: {stats['estimate_live_data_size'] / (1024*1024):.1f} MB",
+            self.indent,
+        )
+        logger.mesg(
+            f"    - Block cache: {stats['block_cache_usage'] / (1024*1024):.1f} MB",
+            self.indent,
+        )
 
     def get(self, key: Union[str, bytes]) -> Any:
         return self.db.get(key)
