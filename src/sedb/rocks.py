@@ -40,7 +40,7 @@ def calc_safe_max_open_files(
     Args:
         requested: User-requested value. -1 means auto-calculate.
         reserve_ratio: Fraction of system limit to use (leave headroom for other processes)
-        min_value: Minimum value to return
+        min_value: Preferred minimum value (only used if system allows)
         max_value: Maximum value to return (RocksDB performs well with bounded limits)
 
     Returns:
@@ -52,6 +52,13 @@ def calc_safe_max_open_files(
     soft_limit, hard_limit = get_system_max_open_files()
     # Use a fraction of soft limit to leave room for other file handles
     calculated = int(soft_limit * reserve_ratio)
+
+    # IMPORTANT: Never exceed the system soft limit!
+    # If system limit is too low, we must respect it even if below min_value
+    if soft_limit < min_value:
+        # System limit is too restrictive, use what we can
+        return max(256, calculated)  # At least 256 for basic operation
+
     return max(min_value, min(calculated, max_value))
 
 
