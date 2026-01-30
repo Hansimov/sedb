@@ -23,6 +23,7 @@ class ElasticOperator:
         connect_msg: str = None,
         connect_cls: type = None,
         verbose: bool = True,
+        verbose_client: bool = False,
         indent: int = 0,
         request_timeout: int = REQUEST_TIMEOUT,
     ):
@@ -31,6 +32,7 @@ class ElasticOperator:
         self.connect_msg = connect_msg
         self.indent = indent
         self.verbose = verbose
+        self.verbose_client = verbose_client
         self.request_timeout = request_timeout
         self.init_configs()
         self.msgr = ConnectMessager(
@@ -64,14 +66,15 @@ class ElasticOperator:
             request_timeout=self.request_timeout,
             # basic_auth=(self.username, self.password),
         )
+        client_info = self.client.info() or {}
+        client_info_str = str(dict(self.client.info() or {}))
         if self.verbose:
-            client_info = self.client.info() or {}
-            client_info_str = str(dict(self.client.info() or {}))
-            status_str = "✓ Connected:"
+            status_str = "  + Connected"
             if client_info:
-                logger.okay(status_str)
+                logger.okay(status_str, indent=self.indent)
             else:
-                logger.warn(status_str)
+                logger.warn(status_str, indent=self.indent)
+        if self.verbose_client:
             logger.mesg(f"  * {client_info_str}", indent=self.indent)
 
     def connect(self, connect_msg: str = None):

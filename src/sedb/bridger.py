@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from typing import Union, Any
 
 from .mongo import MongoOperator
@@ -98,6 +100,79 @@ class ElasticBridger:
         }
         result = self.elastic.client.search(**search_params)
         return result["hits"].get("hits", [])
+
+    def _mget_batch(
+        self,
+        index_name: str,
+        batch_ids: list[str],
+        source_includes: list[str] = None,
+        filter_path: str = None,
+    ) -> list[dict]:
+        """Fetch a single batch of ids via mget."""
+        result = self.elastic.client.mget(
+            index=index_name,
+            ids=batch_ids,
+            source_includes=source_includes,
+            filter_path=filter_path,
+        )
+        # Filter out docs that don't exist (found=False)
+        return [doc for doc in result.get("docs", []) if doc.get("found", False)]
+
+    def mget_ids(
+        self,
+        index_name: str,
+        ids: list[str],
+        output_fields: list[str] = None,
+        batch_size: int = 500,
+        max_workers: int = 10,
+    ) -> list[dict]:
+        """Batch get documents by ids using mget API with parallel batching.
+
+        This is faster than filter_ids() for pure id lookups without filtering.
+        Large id lists are split into batches and fetched in parallel.
+
+        Args:
+            index_name: Elasticsearch index name
+            ids: List of document ids to fetch
+            output_fields: Fields to return in _source (None = all fields)
+            batch_size: Number of ids per mget request (default: 500)
+            max_workers: Number of parallel workers (default: 10)
+
+        Returns:
+            List of hit dicts with _id and _source, only for docs that exist
+        """
+        if not ids:
+            return []
+
+        # Build filter_path once for all batches (reduces response size)
+        # Only request _id, found status, and specified source fields
+        if output_fields:
+            filter_path = "docs._id,docs.found," + ",".join(
+                f"docs._source.{f}" for f in output_fields
+            )
+        else:
+            filter_path = "docs._id,docs.found,docs._source"
+
+        # Split ids into batches
+        batches = [ids[i : i + batch_size] for i in range(0, len(ids), batch_size)]
+
+        # Single batch: direct call without threading overhead
+        if len(batches) == 1:
+            return self._mget_batch(index_name, batches[0], output_fields, filter_path)
+
+        # Multiple batches: parallel execution
+        all_hits = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._mget_batch, index_name, batch, output_fields, filter_path
+                ): i
+                for i, batch in enumerate(batches)
+            }
+            for future in as_completed(futures):
+                all_hits.extend(future.result())
+
+        return all_hits
 
 
 class RocksBridger:
