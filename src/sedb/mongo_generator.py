@@ -99,8 +99,9 @@ class MongoDocsGenerator:
             return
         if self.max_count:
             self.total_count = min(self.total_count, self.max_count)
-        if self.skip_count:
+        if self.skip_count and self.max_count:
             self.total_count += self.skip_count
+            self.total_count = min(self.total_count, self.max_count + self.skip_count)
 
     def init_progress_bar(self):
         """Must call this before logging progress when iterating cursor."""

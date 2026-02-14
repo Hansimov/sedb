@@ -1,10 +1,12 @@
 import os
 import re
 import resource
+import shutil
 import threading
 
 from rocksdict import Rdict, Options, BlockBasedOptions, WriteOptions
 from rocksdict import WriteBatch, Cache, DBCompressionType, ReadOptions
+from rocksdict import AccessType
 from pathlib import Path
 from tclogger import FileLogger, TCLogger, TCLogbar, logstr, brp, brk
 from tclogger import PathType, norm_path
@@ -91,8 +93,22 @@ def get_shared_block_cache(size_mb: int = 8192) -> Cache:
         return _SHARED_BLOCK_CACHE
 
 
+# Access type constants
+ACCESS_READ_WRITE = "read_write"
+ACCESS_READ_ONLY = "read_only"
+ACCESS_SECONDARY = "secondary"
+
+
 class RocksConfigsType(TypedDict, total=False):
     db_path: Union[str, Path]
+    # access mode: "read_write" (default), "read_only", or "secondary"
+    # - read_write: exclusive write lock, full read/write access (only one writer)
+    # - read_only: shared read access, multiple processes can read simultaneously
+    # - secondary: shared read access that can catch up with primary writer's updates
+    # one of ACCESS_READ_WRITE, ACCESS_READ_ONLY, ACCESS_SECONDARY
+    access_type: str = "read_write"
+    # only for secondary mode, auto-generated if omitted
+    secondary_path: Union[str, Path] = None
     # options
     max_open_files: int = -1  # -1 = auto-calculate based on system limits
     max_file_opening_threads: int = 16
@@ -150,6 +166,7 @@ class RocksOperator:
         self.verbose = verbose
         self.indent = indent
         self.raw_mode = raw_mode
+        self.db = None
         self.init_configs()
         self.msgr = ConnectMessager(
             msg=connect_msg,
@@ -167,9 +184,58 @@ class RocksOperator:
         if self.connect_at_init:
             self.connect()
 
+    @property
+    def is_read_write(self) -> bool:
+        """Whether the DB is opened in read_write mode (exclusive writer)."""
+        return self.access_type == ACCESS_READ_WRITE
+
+    @property
+    def is_read_only(self) -> bool:
+        """Whether the DB is opened in read_only mode (static snapshot)."""
+        return self.access_type == ACCESS_READ_ONLY
+
+    @property
+    def is_secondary(self) -> bool:
+        """Whether the DB is opened in secondary mode (can catch up with primary)."""
+        return self.access_type == ACCESS_SECONDARY
+
+    @property
+    def is_writable(self) -> bool:
+        """Whether the DB is opened in a writable mode."""
+        return self.is_read_write
+
+    def _check_writable(self, operation: str = "write"):
+        """Raise error if DB is not in writable mode."""
+        if not self.is_writable:
+            raise RuntimeError(
+                f"Cannot {operation} in '{self.access_type}' mode. "
+                f"Open with access_type='{ACCESS_READ_WRITE}' to enable writes."
+            )
+
     def init_configs(self):
         # init db_path
         self.db_path = Path(self.configs["db_path"])
+
+        # init access type
+        self.access_type = self.configs.get("access_type", ACCESS_READ_WRITE)
+        if self.access_type not in (
+            ACCESS_READ_WRITE,
+            ACCESS_READ_ONLY,
+            ACCESS_SECONDARY,
+        ):
+            raise ValueError(
+                f"Invalid access_type: '{self.access_type}'. "
+                f"Must be one of: '{ACCESS_READ_WRITE}', '{ACCESS_READ_ONLY}', '{ACCESS_SECONDARY}'"
+            )
+
+        # init secondary path (for secondary mode)
+        if self.is_secondary:
+            secondary_path = self.configs.get("secondary_path")
+            if secondary_path:
+                self.secondary_path = Path(secondary_path)
+            else:
+                # Auto-generate: <db_path>.secondary.<pid>
+                self.secondary_path = Path(f"{self.db_path}.secondary.{os.getpid()}")
 
         # init retry options
         self.max_retries = self.configs.get("max_retries", 3)
@@ -177,7 +243,8 @@ class RocksOperator:
 
         # init db options
         options = Options(raw_mode=self.raw_mode)
-        options.create_if_missing(True)
+        # Only create DB in read_write mode
+        options.create_if_missing(self.is_read_write)
 
         # Calculate safe max_open_files based on system limits
         # Using -1 (unlimited) can cause "Too many open files" when SST count exceeds ulimit
@@ -197,19 +264,22 @@ class RocksOperator:
         options.set_target_file_size_base(
             self.configs.get("target_file_size_base_mb", 64) * 1024 * 1024
         )
-        options.set_write_buffer_size(
-            self.configs.get("write_buffer_size_mb", 64) * 1024 * 1024
-        )
-        # More write buffers allow more concurrent writes before stalling
-        options.set_max_write_buffer_number(
-            self.configs.get("max_write_buffer_number", 4)
-        )
-        options.set_level_zero_slowdown_writes_trigger(
-            self.configs.get("level_zero_slowdown_writes_trigger", 20000)
-        )
-        options.set_level_zero_stop_writes_trigger(
-            self.configs.get("level_zero_stop_writes_trigger", 50000)
-        )
+
+        # Write-specific options: only configure for writable mode
+        if self.is_writable:
+            options.set_write_buffer_size(
+                self.configs.get("write_buffer_size_mb", 64) * 1024 * 1024
+            )
+            # More write buffers allow more concurrent writes before stalling
+            options.set_max_write_buffer_number(
+                self.configs.get("max_write_buffer_number", 4)
+            )
+            options.set_level_zero_slowdown_writes_trigger(
+                self.configs.get("level_zero_slowdown_writes_trigger", 20000)
+            )
+            options.set_level_zero_stop_writes_trigger(
+                self.configs.get("level_zero_stop_writes_trigger", 50000)
+            )
         options.set_compression_type(DBCompressionType.lz4())
 
         # Read optimization options
@@ -220,10 +290,15 @@ class RocksOperator:
         # Good for point lookups, bad for sequential scans
         if self.configs.get("advise_random_on_open", True):
             options.set_advise_random_on_open(True)
-        # Compaction readahead - improves compaction performance
-        compaction_readahead_mb = self.configs.get("compaction_readahead_size_mb", 2)
-        if compaction_readahead_mb > 0:
-            options.set_compaction_readahead_size(compaction_readahead_mb * 1024 * 1024)
+        # Compaction readahead - improves compaction performance (writer only)
+        if self.is_writable:
+            compaction_readahead_mb = self.configs.get(
+                "compaction_readahead_size_mb", 2
+            )
+            if compaction_readahead_mb > 0:
+                options.set_compaction_readahead_size(
+                    compaction_readahead_mb * 1024 * 1024
+                )
 
         # init table options with SHARED block cache
         # Using shared cache ensures data cached by one RocksOperator can be
@@ -242,10 +317,13 @@ class RocksOperator:
 
         self.db_options = options
 
-        # init write options
-        write_options = WriteOptions()
-        write_options.no_slowdown = True
-        self.write_options = write_options
+        # init write options (only for writable mode)
+        if self.is_writable:
+            write_options = WriteOptions()
+            write_options.no_slowdown = True
+            self.write_options = write_options
+        else:
+            self.write_options = None
 
         # init read options for optimized reads
         read_options = ReadOptions()
@@ -292,18 +370,52 @@ class RocksOperator:
                 self.indent,
             )
 
+    def _build_access_type(self) -> AccessType:
+        """Build the AccessType object for Rdict based on config."""
+        if self.is_read_only:
+            return AccessType.read_only()
+        elif self.is_secondary:
+            secondary_path = str(self.secondary_path.resolve())
+            return AccessType.secondary(secondary_path)
+        else:
+            return AccessType.read_write()
+
     def connect(self):
         self.msgr.log_endpoint()
         self.msgr.log_now()
         self.msgr.log_msg()
+
+        access_type_obj = self._build_access_type()
+
         if not Path(self.db_path).exists():
+            if not self.is_writable:
+                raise FileNotFoundError(
+                    f"Cannot open non-existent DB in '{self.access_type}' mode: "
+                    f"{self.db_path}. Create it first with access_type='{ACCESS_READ_WRITE}'."
+                )
             status = "Created"
         else:
             status = "Opened"
             # NOTE: Remove OPTIONS files to ensure block cache config is used
-            self._remove_options_files()
-        self.db = Rdict(path=str(self.db_path.resolve()), options=self.db_options)
-        self.db.set_write_options(self.write_options)
+            # Only do this for read_write mode to avoid interfering with primary
+            if self.is_writable:
+                self._remove_options_files()
+
+        # Build mode description for logging
+        if not self.is_read_write:
+            status = f"{status} ({self.access_type})"
+
+        # Ensure secondary path directory exists
+        if self.is_secondary:
+            self.secondary_path.mkdir(parents=True, exist_ok=True)
+
+        self.db = Rdict(
+            path=str(self.db_path.resolve()),
+            options=self.db_options,
+            access_type=access_type_obj,
+        )
+        if self.write_options:
+            self.db.set_write_options(self.write_options)
         self.db.set_read_options(self.read_options)
         if self.verbose:
             self._log_connect_info(status)
@@ -364,6 +476,7 @@ class RocksOperator:
         return self.db.get(keys)
 
     def set(self, key: Union[str, bytes], value: Any):
+        self._check_writable("set")
         self.db.put(key, value)
 
     def _is_retryable_error(self, e: Exception) -> bool:
@@ -398,6 +511,7 @@ class RocksOperator:
 
     def mset(self, d: Union[dict, list[tuple]]):
         """Set multiple key-value pairs at once with WriteBatch."""
+        self._check_writable("mset")
         wb = WriteBatch(raw_mode=self.raw_mode)
         if isinstance(d, dict):
             for key, value in d.items():
@@ -410,23 +524,54 @@ class RocksOperator:
             raise ValueError("Input must be dict or list of (key, value) tuples")
         self._write_with_retry(wb)
 
+    def catch_up(self):
+        """Catch up with the primary DB (secondary mode only).
+
+        In secondary mode, this reads the latest data from the primary.
+        Call this periodically to see new writes from the primary process.
+        """
+        if not self.is_secondary:
+            raise RuntimeError(
+                f"catch_up() is only available in '{ACCESS_SECONDARY}' mode, "
+                f"current mode is '{self.access_type}'."
+            )
+        self.db.try_catch_up_with_primary()
+
     def flush(self, verbose: bool = False):
+        if not self.is_writable or self.db is None:
+            return
         self.db.flush()
         if verbose:
             status = "Flushed"
             logger.file(f"  * RocksDB: {brk(status)}", self.indent)
 
     def close(self, verbose: bool = False):
+        if self.db is None:
+            return
         self.db.close()
+        self.db = None
+        # Clean up secondary path directory
+        if self.is_secondary and self.secondary_path.exists():
+            shutil.rmtree(self.secondary_path, ignore_errors=True)
         if verbose:
             status = "Closed"
             logger.warn(f"  - RocksDB: {brk(status)}", self.indent)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.is_writable:
+            self.flush()
+        self.close()
+        return False
+
     def __del__(self):
         try:
-            self.flush()
+            if self.is_writable:
+                self.flush()
             self.close()
-        except Exception as e:
+        except Exception:
             pass
 
     def _iter(
