@@ -15,9 +15,10 @@ classifiers = [
 dependencies = [ "tclogger" ]
 
 [project.optional-dependencies]
-common = [ "pymongo", "elasticsearch", "redis", "rocksdict" ]
+common = [ "pymongo", "elasticsearch", "redis", "rocksdict", "psycopg2-binary" ]
+postgres = [ "psycopg2-binary" ]
 vector = [ "numpy", "pymilvus", "qdrant-client", "faiss-cpu" ]
-all = [ "pymongo", "elasticsearch", "redis", "rocksdict", "numpy", "pymilvus", "qdrant-client", "faiss-cpu", "requests", "pydantic", "fastapi", "uvicorn" ]
+all = [ "pymongo", "elasticsearch", "redis", "rocksdict", "psycopg2-binary", "numpy", "pymilvus", "qdrant-client", "faiss-cpu", "requests", "pydantic", "fastapi", "uvicorn" ]
 
 [project.urls]
 Homepage = "https://github.com/Hansimov/sedb"

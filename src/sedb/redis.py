@@ -22,8 +22,8 @@ DEFAULT_REDIS_CONFIGS = {
     "host": "localhost",
     "port": 6379,
     "db": 0,
-    "username": "default",
-    "password": "defaultpass",
+    "username": "",
+    "password": "",
 }
 
 
@@ -79,13 +79,16 @@ class RedisOperator:
         self.msgr.log_endpoint()
         self.msgr.log_now()
         self.msgr.log_msg()
-        self.client = redis.Redis(
-            host=self.host,
-            port=self.port,
-            db=self.db,
-            username=self.username,
-            password=self.password,
-        )
+        redis_kwargs = {
+            "host": self.host,
+            "port": self.port,
+            "db": self.db,
+        }
+        if self.username:
+            redis_kwargs["username"] = self.username
+        if self.password:
+            redis_kwargs["password"] = self.password
+        self.client = redis.Redis(**redis_kwargs)
         try:
             self.client.ping()
             self.msgr.log_dbname()

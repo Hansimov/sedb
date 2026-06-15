@@ -16,6 +16,7 @@ Currently, `sedb` supports interacting with following services:
   - ElasticSearch
   - Redis
   - RocksDB
+  - PostgreSQL
 
 - vector:
   - Faiss
